@@ -181,9 +181,33 @@ fn read_value_parse<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
     })
 }
 
+pub fn parse<'a>(input: &'a str) -> ParseResult<'a, Vec<TokenType>> {
+    let (rest, declarations) = declaration_parser(input)?;
+    let (rest, assignment) = assignment_parser(rest)?;
+    let (rest, mut tokens) = many0(parse_ast_once)(rest)?;
+    let mut output = Vec::with_capacity(2 + tokens.len());
+    output.push(declarations);
+    output.push(assignment);
+    output.append(&mut tokens);
+    Ok((rest, output))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse() {
+        let assignment = format!(
+            "{} {{
+                {} = \"This is a string\"
+                (NO_DETAIL, ALL_THE_DETAIL) = \"This is a string\"
+            }}",
+            ASSINGMENT_MARKER, DEFAULT_NAME
+        );
+
+        //let declaration = 
+    };
 
     #[test]
     fn test_read_value() {
@@ -276,7 +300,6 @@ mod tests {
             ASSINGMENT_MARKER, DEFAULT_NAME
         );
 
-        println!("{}", input);
         let expected_output = TokenType::AssigmentBlock(vec![
             AssignmentArm::Default("This is a string"),
             AssignmentArm::SpecificArm {
