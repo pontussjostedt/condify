@@ -28,16 +28,16 @@ pub enum AssignmentArm<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ASTType<'a> {
+pub enum TokenType<'a> {
     Declaration(Vec<&'a str>),
     FreeChar(&'a char),
     FreeText(&'a char),
     AssigmentBlock(Vec<AssignmentArm<'a>>),
     IfBlock {
         include: Vec<&'a str>,
-        body: Vec<ASTType<'a>>,
-        else_block: Option<Vec<ASTType<'a>>>,
+        body: Vec<TokenType<'a>>,
     },
+    Else(Vec<TokenType<'a>>)
 }
 
 type ParseResult<'a, T: 'a> = IResult<&'a str, T, VerboseError<&'a str>>;
@@ -49,10 +49,18 @@ fn valid_front<'a>(input: &'a str) -> ParseResult<'a, &str> {
 fn marker<'a>(marker: &'a str) -> impl Fn(&'a str) -> ParseResult<'a, &str> {
     move |i: &str| {
         preceded(
-            opt(valid_front),
+            valid_front,
             tag::<&'a str, &'a str, VerboseError<&str>>(marker),
         )(i)
     }
+}
+
+fn name_parser<'a>(input: &'a str) -> ParseResult<'a, &'a str> {
+    take_while(|c: char| c.is_alphanumeric() || c == '_')(input)
+}
+
+fn list_parser<'a>(input: &'a str) -> ParseResult<'a, Vec<&'a str>> {  //TODO: make general for any parser, will allow to also add verify
+    terminated(separated_list0(tag(","), preceded(opt(space0), name_parser)), opt(tag(",")))(input)
 }
 
 fn string_parser<'a>(input: &'a str) -> ParseResult<'a, &str> {
@@ -63,7 +71,7 @@ fn string_parser<'a>(input: &'a str) -> ParseResult<'a, &str> {
     )(input)
 }
 
-fn declaration_parser<'a>(input: &'a str) -> ParseResult<'a, ASTType> {
+fn declaration_parser<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
     let parser = terminated(
         separated_list0(
             tag(","),
@@ -78,7 +86,7 @@ fn declaration_parser<'a>(input: &'a str) -> ParseResult<'a, ASTType> {
         opt(tag(",")),
     );
     delimited(tag(START_DECLARE_MARKER), parser, tag(END_DEDCLARE_MARKER))(input)
-        .map(|(next_input, res)| (next_input, ASTType::Declaration(res)))
+        .map(|(next_input, res)| (next_input, TokenType::Declaration(res)))
 }
 
 // mby decompose into more functions so they can all be tested separatley?
@@ -119,19 +127,42 @@ fn assignment_default_arm_parser<'a>(input: &'a str) -> ParseResult<'a, Assignme
     )(input)
     .map(|(next_input, res)| (next_input, AssignmentArm::Default(res)))
 }
-fn assignment_parser<'a>(input: &'a str) -> ParseResult<'a, ASTType> {
+fn assignment_parser<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
     let inner = many0(alt((
         preceded(opt(valid_front), assignment_default_arm_parser),
         preceded(opt(valid_front), assignment_specific_arm_parser),
     )));
     preceded(tag(ASSINGMENT_MARKER), delimited(marker("{"), inner, marker("}")))(input)
-        .map(|(next_input, res)| (next_input, ASTType::AssigmentBlock(res)))
+        .map(|(next_input, res)| (next_input, TokenType::AssigmentBlock(res)))
     //preceded(tag(ASSINGMENT_MARKER), delimited(marker("{"), , marker("}")))
+}
+
+fn parse_ast<'a>(input: &'a str) -> ParseResult<'a, Vec<TokenType>> {
+    todo!()
+}
+
+fn if_parser<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
+    let (rest, include) = delimited(tag("("), list_parser, tag(")"))(input)?;
+    let after
+
+    delimited(marker(IF_MARKER), todo!(), cut(marker(ENDIF_MARKER)))(input)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_list_parser(){
+        let input = "Name1, Name2";
+        let output_vec = vec!["Name1", "Name2"];
+        assert_eq!(list_parser(input), Ok(("", output_vec.clone())));
+        let input = "Name1,Name2";
+        assert_eq!(list_parser(input), Ok(("", output_vec.clone())), "No space between");
+        // TODO!
+        //let input = "Name1, Name2,";
+        //assert_eq!(list_parser(input), Ok(("", output_vec.clone())), "Trailing comma");
+    }
 
     #[test]
     fn test_assignment_parser() {
@@ -145,7 +176,7 @@ mod tests {
         );
 
         println!("{}", input);
-        let expected_output = ASTType::AssigmentBlock(vec![
+        let expected_output = TokenType::AssigmentBlock(vec![
             AssignmentArm::Default("This is a string"),
             AssignmentArm::SpecificArm {
                 include: vec!["NO_DETAIL", "ALL_THE_DETAIL"],
@@ -183,7 +214,7 @@ mod tests {
     #[test]
     fn test_arm_declaration_parser() {
         let input = "<NO_DETAIL, ALL_THE_DETAIL>";
-        let expected_answer = ASTType::Declaration(vec!["NO_DETAIL", "ALL_THE_DETAIL"]);
+        let expected_answer = TokenType::Declaration(vec!["NO_DETAIL", "ALL_THE_DETAIL"]);
         assert_eq!(declaration_parser(input), Ok(("", expected_answer)));
     }
 
