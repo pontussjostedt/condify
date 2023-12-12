@@ -17,6 +17,7 @@ static START_DECLARE_MARKER: &'static str = "<";
 static END_DEDCLARE_MARKER: &'static str = ">";
 static ASSINGMENT_MARKER: &'static str = "ASSIGNMENT";
 static DEFAULT_NAME: &'static str = "DEFAULT";
+static READ_VALUE_MARKER: &'static str = "<*>";
 
 #[derive(Debug, PartialEq)]
 pub enum AssignmentArm<'a> {
@@ -31,6 +32,7 @@ pub enum AssignmentArm<'a> {
 pub enum TokenType<'a> {
     Declaration(Vec<&'a str>),
     FreeChar(char),
+    ReadValue(&'a str),
     AssigmentBlock(Vec<AssignmentArm<'a>>),
     IfBlock {
         include: Vec<&'a str>,
@@ -148,7 +150,7 @@ fn parse_char<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
 }
 
 fn parse_ast_once<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
-    let parsers = (if_parser, parse_char);
+    let parsers = (if_parser, read_value_parse, parse_char);
     alt(parsers)(input)
 }
 
@@ -173,9 +175,23 @@ fn if_parser<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
     Ok((rest, output))
 }
 
+fn read_value_parse<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
+    preceded(tag(READ_VALUE_MARKER), name_parser)(input).map(|(rest, name)| {
+        (rest, TokenType::ReadValue(name))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_read_value() {
+        let name = "COOL_name";
+        let input = format!("<*>{} ", name);
+        let expected_output = TokenType::ReadValue(name);
+        assert_eq!(read_value_parse(&input), Ok((" ", expected_output)));
+    }
 
     #[test]
     fn test_else_if() {
