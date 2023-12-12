@@ -2,12 +2,12 @@ use std::marker;
 
 use nom::branch::alt;
 use nom::bytes::complete::*;
-use nom::character::complete::{crlf, newline, space0};
+use nom::character::complete::{anychar, crlf, newline, space0};
 use nom::combinator::*;
-use nom::error::{context, Error, ErrorKind, ParseError, VerboseError, VerboseErrorKind};
+use nom::error::{context, VerboseError};
 use nom::multi::{many0, separated_list0};
 use nom::sequence::{delimited, preceded, terminated, tuple};
-use nom::{Compare, Err, IResult, InputLength, InputTake, Parser};
+use nom::IResult;
 //type ParserType<'a> = FnMut(&str)
 
 static IF_MARKER: &'static str = "!IF";
@@ -30,14 +30,13 @@ pub enum AssignmentArm<'a> {
 #[derive(Debug, PartialEq)]
 pub enum TokenType<'a> {
     Declaration(Vec<&'a str>),
-    FreeChar(&'a char),
-    FreeText(&'a char),
+    FreeChar(char),
     AssigmentBlock(Vec<AssignmentArm<'a>>),
     IfBlock {
         include: Vec<&'a str>,
         body: Vec<TokenType<'a>>,
+        else_body: Option<Vec<TokenType<'a>>>,
     },
-    Else(Vec<TokenType<'a>>)
 }
 
 type ParseResult<'a, T: 'a> = IResult<&'a str, T, VerboseError<&'a str>>;
@@ -59,8 +58,12 @@ fn name_parser<'a>(input: &'a str) -> ParseResult<'a, &'a str> {
     take_while(|c: char| c.is_alphanumeric() || c == '_')(input)
 }
 
-fn list_parser<'a>(input: &'a str) -> ParseResult<'a, Vec<&'a str>> {  //TODO: make general for any parser, will allow to also add verify
-    terminated(separated_list0(tag(","), preceded(opt(space0), name_parser)), opt(tag(",")))(input)
+fn list_parser<'a>(input: &'a str) -> ParseResult<'a, Vec<&'a str>> {
+    //TODO: make general for any parser, will allow to also add verify
+    terminated(
+        separated_list0(tag(","), preceded(opt(space0), name_parser)),
+        opt(tag(",")),
+    )(input)
 }
 
 fn string_parser<'a>(input: &'a str) -> ParseResult<'a, &str> {
@@ -132,21 +135,42 @@ fn assignment_parser<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
         preceded(opt(valid_front), assignment_default_arm_parser),
         preceded(opt(valid_front), assignment_specific_arm_parser),
     )));
-    preceded(tag(ASSINGMENT_MARKER), delimited(marker("{"), inner, marker("}")))(input)
-        .map(|(next_input, res)| (next_input, TokenType::AssigmentBlock(res)))
+    preceded(
+        tag(ASSINGMENT_MARKER),
+        delimited(marker("{"), inner, marker("}")),
+    )(input)
+    .map(|(next_input, res)| (next_input, TokenType::AssigmentBlock(res)))
     //preceded(tag(ASSINGMENT_MARKER), delimited(marker("{"), , marker("}")))
 }
 
-fn parse_ast<'a>(input: &'a str) -> ParseResult<'a, Vec<TokenType>> {
-    todo!()
+fn parse_char<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
+    nom::character::complete::anychar(input).map(|(rest, ch)| (rest, TokenType::FreeChar(ch)))
+}
+
+fn parse_ast_once<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
+    let parsers = (if_parser, parse_char);
+    alt(parsers)(input)
 }
 
 fn if_parser<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
-    let (rest, include) = delimited(tag("("), list_parser, tag(")"))(input)?;
-    //let after
+    let branch_parse = alt((marker(ELSE_MARKER), marker(ENDIF_MARKER)));
 
-    //delimited(marker(IF_MARKER), todo!(), cut(marker(ENDIF_MARKER)))(input)
-    todo!()
+    let (rest, _) = marker(IF_MARKER)(input)?;
+    let (rest, include) = delimited(tag("("), list_parser, cut(tag(")")))(rest)?;
+    let (rest, body) = many0(preceded(peek(not(branch_parse)), parse_ast_once))(rest)?; // EAT UNTIL ELSE, ENDIF MARKER OR EOF
+    let (rest, else_body) = opt(preceded(
+        marker(ELSE_MARKER),
+        many0(preceded(peek(not(marker(ENDIF_MARKER))), parse_ast_once)), //EAT UNTIL ENDIF OR EOF
+    ))(rest)?;
+    let (rest, _) = context("Expected: end of if", cut(marker(ENDIF_MARKER)))(rest)?; //syntax error
+
+    let output = TokenType::IfBlock {
+        include,
+        body,
+        else_body,
+    };
+
+    Ok((rest, output))
 }
 
 #[cfg(test)]
@@ -154,12 +178,73 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_list_parser(){
+    fn test_else_if() {
+        let inner_free_text = "bob bob bob";
+        let else_inner_free_text = "Holla!";
+        let input = format!(
+            " {}(a,b){} {}{} {}",
+            IF_MARKER, inner_free_text, ELSE_MARKER, else_inner_free_text, ENDIF_MARKER
+        );
+        let expected_output = TokenType::IfBlock {
+            include: vec!["a", "b"],
+            body: inner_free_text.chars().map(TokenType::FreeChar).collect(),
+            else_body: Some(
+                else_inner_free_text
+                    .chars()
+                    .map(TokenType::FreeChar)
+                    .collect(),
+            ),
+        };
+
+        assert_eq!(if_parser(&input), Ok(("", expected_output)));
+    }
+
+    #[test]
+    fn test_nested_if() {
+        let inner_free_text = "bob bob bob";
+        let input = format!(
+            " {}(a,b) {}(a){} {} {}",
+            IF_MARKER, IF_MARKER, inner_free_text, ENDIF_MARKER, ENDIF_MARKER
+        );
+        let inner_if = TokenType::IfBlock {
+            include: vec!["a"],
+            body: inner_free_text.chars().map(TokenType::FreeChar).collect(),
+            else_body: None,
+        };
+
+        let expected_output = TokenType::IfBlock {
+            include: vec!["a", "b"],
+            body: vec![inner_if],
+            else_body: None,
+        };
+
+        assert_eq!(if_parser(&input), Ok(("", expected_output)));
+    }
+
+    #[test]
+    fn test_if_parser_free_text() {
+        let inner_free_text = "bob bob bob";
+        let input = format!(" {}(a,b){}{}", IF_MARKER, inner_free_text, ENDIF_MARKER);
+        let expected_output = TokenType::IfBlock {
+            include: vec!["a", "b"],
+            body: inner_free_text.chars().map(TokenType::FreeChar).collect(),
+            else_body: None,
+        };
+
+        assert_eq!(if_parser(&input), Ok(("", expected_output)));
+    }
+
+    #[test]
+    fn test_list_parser() {
         let input = "Name1, Name2";
         let output_vec = vec!["Name1", "Name2"];
         assert_eq!(list_parser(input), Ok(("", output_vec.clone())));
         let input = "Name1,Name2";
-        assert_eq!(list_parser(input), Ok(("", output_vec.clone())), "No space between");
+        assert_eq!(
+            list_parser(input),
+            Ok(("", output_vec.clone())),
+            "No space between"
+        );
         // TODO!
         //let input = "Name1, Name2,";
         //assert_eq!(list_parser(input), Ok(("", output_vec.clone())), "Trailing comma");
@@ -172,8 +257,7 @@ mod tests {
                 {} = \"This is a string\"
                 (NO_DETAIL, ALL_THE_DETAIL) = \"This is a string\"
             }}",
-            ASSINGMENT_MARKER,
-            DEFAULT_NAME
+            ASSINGMENT_MARKER, DEFAULT_NAME
         );
 
         println!("{}", input);
