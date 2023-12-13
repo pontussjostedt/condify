@@ -31,6 +31,7 @@ pub enum AssignmentArm<'a> {
 #[derive(Debug, PartialEq)]
 pub enum TokenType<'a> {
     Declaration(Vec<&'a str>),
+    FreeText(&'a str),
     FreeChar(char),
     ReadValue(&'a str),
     AssigmentBlock(Vec<AssignmentArm<'a>>),
@@ -183,13 +184,20 @@ fn read_value_parse<'a>(input: &'a str) -> ParseResult<'a, TokenType> {
 
 pub fn parse<'a>(input: &'a str) -> ParseResult<'a, Vec<TokenType>> {
     let (rest, declarations) = declaration_parser(input)?;
-    let (rest, assignment) = assignment_parser(rest)?;
+    let (rest, assignment_opt) = opt(assignment_parser)(rest)?;
     let (rest, mut tokens) = many0(parse_ast_once)(rest)?;
-    let mut output = Vec::with_capacity(2 + tokens.len());
-    output.push(declarations);
-    output.push(assignment);
-    output.append(&mut tokens);
-    Ok((rest, output))
+    if let Some(assignment) = assignment_opt {
+        let mut output = Vec::with_capacity(2 + tokens.len());
+        output.push(declarations);
+        output.push(assignment);
+        output.append(&mut tokens);
+        Ok((rest, output))
+    } else {
+        let mut output = Vec::with_capacity(1 + tokens.len());
+        output.push(declarations);
+        output.append(&mut tokens);
+        Ok((rest, output))
+    }
 }
 
 #[cfg(test)]
@@ -205,9 +213,7 @@ mod tests {
             }}",
             ASSINGMENT_MARKER, DEFAULT_NAME
         );
-
-        //let declaration = 
-    };
+    }
 
     #[test]
     fn test_read_value() {
