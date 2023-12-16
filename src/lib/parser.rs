@@ -196,18 +196,7 @@ pub fn parse<'a>(input: &'a str) -> ParseResult<'a, Vec<TokenType>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_parse() {
-        let assignment = format!(
-            "{} {{
-                {} = \"This is a string\"
-                (NO_DETAIL, ALL_THE_DETAIL) = \"This is a string\"
-            }}",
-            ASSINGMENT_MARKER, DEFAULT_NAME
-        );
-
-        //let declaration = 
-    };
+   
 
     #[test]
     fn test_read_value() {
