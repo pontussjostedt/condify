@@ -16,8 +16,8 @@ use super::parse_utils::condify_tag;
 static IF_MARKER: &'static str = "!IF";
 static ELSE_MARKER: &'static str = "!ELSE";
 static ENDIF_MARKER: &'static str = "!ENDIF";
-static START_DECLARE_MARKER: &'static str = "<";
-static END_DEDCLARE_MARKER: &'static str = ">";
+static START_DECLARATION_MARKER: &'static str = "<";
+static END_DEDCLARATION_MARKER: &'static str = ">";
 static ASSINGMENT_MARKER: &'static str = "ASSIGNMENT";
 static DEFAULT_NAME: &'static str = "DEFAULT";
 static READ_VALUE_MARKER: &'static str = "<*>";
@@ -47,6 +47,12 @@ struct AssignmentState<'a> {
     valid_names: Vec<&'a str>
 }
 
+impl AssignmentState<'_> {
+    fn is_valid_name(&self, name: &str) -> bool {
+        self.valid_names.contains(&name)
+    }
+}
+
 type ParseResult<'a, T: 'a> = IResult<&'a str, T, CondifyError<&'a str>>;
 
 fn whitespace1<'a>(input: &'a str) -> ParseResult<'a, &str> {
@@ -72,11 +78,23 @@ fn list1<'a> (start_delim: &'static str, end_delim: &'static str, sep: char) -> 
     }
 }
 
+fn parse_declaration<'a>(input: &'a str) -> ParseResult<TokenType> {
+    let (rest, list) = list1(START_DECLARATION_MARKER, END_DEDCLARATION_MARKER, ',')(input)?;
+    Ok((rest, TokenType::Declaration(list)))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::lib::parsing::error::CondifyErrorKind;
 
     use super::*;
+
+    #[test]
+    fn test_parse_declaration() {
+        let input = format!("{start_delim}NO_DETAIL, ALL_THE_DETAIL{end_delim} rest", start_delim= START_DECLARATION_MARKER, end_delim=END_DEDCLARATION_MARKER);
+        let expected_output: ParseResult<TokenType> = Ok((" rest", TokenType::Declaration(vec!["NO_DETAIL", "ALL_THE_DETAIL"])));
+        assert_eq!(parse_declaration(input.as_str()), expected_output);
+    }
 
     #[test]
     fn test_list1_fail_on_no_delimiter() {
