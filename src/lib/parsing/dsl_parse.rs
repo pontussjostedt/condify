@@ -10,6 +10,7 @@ use nom::sequence::{delimited, preceded, terminated, tuple};
 use nom::IResult;
 
 use super::error::CondifyError;
+use super::parse_utils::condify_tag;
 //type ParserType<'a> = FnMut(&str)
 
 static IF_MARKER: &'static str = "!IF";
@@ -42,7 +43,6 @@ pub enum TokenType<'a> {
         else_body: Option<Vec<TokenType<'a>>>,
     },
 }
-
 struct AssignmentState<'a> {
     valid_names: Vec<&'a str>
 }
@@ -63,14 +63,32 @@ fn name1<'a>(input: &'a str) -> ParseResult<'a, &str> {
     take_while1(is_valid_name_char)(input)
 }
 
+fn list1<'a> (start_delim: &'static str, end_delim: &'static str, sep: char) -> impl Fn(&'a str) -> ParseResult<Vec<&'a str>> {
+    move |input: &'a str| {
+        let (rest, _) = condify_tag(start_delim)(input)?;
+        let (rest, list) = separated_list0(nom::character::complete::char(sep), preceded(opt(whitespace1), name1))(rest)?;
+        let (rest, _) = context("Looking for end of list", cut(condify_tag(end_delim)))(rest)?;
+        Ok((rest, list))
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn test_name1_accept() {
-        let input = "THIS_IS_A_name6 Not Included";
-        let expected_output: ParseResult<&str> = Ok((" Not Included", "THIS_IS_A_name6"));
+    #[test]
+    fn test_list1() {
+        let input = "[AoA,DETAILED_NAME,NO_DETAIL] rest";
+        let expected_output: ParseResult<Vec<&str>> = Ok((" rest", vec!["AoA","DETAILED_NAME","NO_DETAIL"]));
+        assert_eq!(list1("[", "]", ',')(input), expected_output);
+        let input = "[AoA, DETAILED_NAME, NO_DETAIL] rest";
+        assert_eq!(list1("[", "]", ',')(input), expected_output);
+    }
+
+    #[test]
+    fn test_name1() {
+        let input = "THIS_IS_A_name6] Not Included";
+        let expected_output: ParseResult<&str> = Ok(("] Not Included", "THIS_IS_A_name6"));
         assert_eq!(name1(input), expected_output)
     }
 
