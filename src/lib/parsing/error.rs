@@ -4,14 +4,14 @@ use nom::{error::{ContextError, ErrorKind, FromExternalError, ParseError, Verbos
 
 // SEE https://github.com/rust-bakery/nom/blob/main/src/error.rs
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CondifyError<I> {
     pub errors: Vec<(I, CondifyErrorKind)>,
 }
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CondifyErrorKind {
     Context(&'static str),
-    Tag(&'static str),
+    Tag(String),
     Char(char),
     Nom(ErrorKind),
 }
