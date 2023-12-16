@@ -74,7 +74,16 @@ fn list1<'a> (start_delim: &'static str, end_delim: &'static str, sep: char) -> 
 
 #[cfg(test)]
 mod tests {
+    use crate::lib::parsing::error::CondifyErrorKind;
+
     use super::*;
+
+    #[test]
+    fn test_list1_fail_on_no_delimiter() {
+        let input = "<AoA,DETAILED_NAME,NO_DETAIL> rest";
+        let expected_output: ParseResult<Vec<&str>> = Err(nom::Err::Error(CondifyError { errors: vec![(input, CondifyErrorKind::Tag("[".to_owned()))] }));
+        assert_eq!(list1("[", "]", ',')(input), expected_output);
+    }
 
     #[test]
     fn test_list1() {
