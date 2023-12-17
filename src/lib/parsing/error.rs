@@ -1,6 +1,9 @@
 use std::fmt::{self, Write};
 
-use nom::{error::{ContextError, ErrorKind, FromExternalError, ParseError, VerboseErrorKind}, Offset};
+use nom::{
+    error::{ContextError, ErrorKind, FromExternalError, ParseError, VerboseErrorKind},
+    Offset,
+};
 
 // SEE https://github.com/rust-bakery/nom/blob/main/src/error.rs
 
@@ -12,6 +15,8 @@ pub struct CondifyError<I> {
 pub enum CondifyErrorKind {
     Context(&'static str),
     Tag(String),
+    NotDeclared(String),
+    AlreadyAssigned(String),
     Char(char),
     Nom(ErrorKind),
 }
@@ -19,18 +24,14 @@ pub enum CondifyErrorKind {
 impl<I> CondifyError<I> {
     pub fn from_condify_error_kind(input: I, kind: CondifyErrorKind) -> Self {
         CondifyError::<I> {
-            errors: vec![(input, kind)]
+            errors: vec![(input, kind)],
         }
     }
 
     pub fn new() -> Self {
-        CondifyError::<I> {
-            errors: vec![]
-        }
+        CondifyError::<I> { errors: vec![] }
     }
 }
-
-
 
 impl<I> ParseError<I> for CondifyError<I> {
     fn from_error_kind(input: I, kind: ErrorKind) -> Self {
@@ -72,8 +73,14 @@ impl<I: fmt::Display> fmt::Display for CondifyError<I> {
             match error {
                 CondifyErrorKind::Nom(e) => writeln!(f, "{:?} at: {}", e, input)?,
                 CondifyErrorKind::Char(c) => writeln!(f, "expected '{}' at: {}", c, input)?,
-                CondifyErrorKind::Tag(t) => writeln!(f, "expected '{}', at: {}", t, input)?,
                 CondifyErrorKind::Context(s) => writeln!(f, "in section '{}', at: {}", s, input)?,
+                CondifyErrorKind::Tag(t) => writeln!(f, "expected '{}', at: {}", t, input)?,
+                CondifyErrorKind::NotDeclared(name) => {
+                    writeln!(f, "{} not declared, at {}", name, input)?
+                }
+                CondifyErrorKind::AlreadyAssigned(name) => {
+                    writeln!(f, "{} already assigned, at {}", name, input)?
+                }
             }
         }
 
@@ -98,13 +105,28 @@ pub fn convert_condify_error<I: core::ops::Deref<Target = str>>(
                     write!(&mut result, "{}: expected '{}', got empty input\n\n", i, c)
                 }
                 CondifyErrorKind::Tag(tag) => {
-                    write!(&mut result, "{}: expected '{}', got empty input\n\n", i, tag)
+                    write!(
+                        &mut result,
+                        "{}: expected '{}', got empty input\n\n",
+                        i, tag
+                    )
                 }
                 CondifyErrorKind::Context(s) => {
                     write!(&mut result, "{}: in {}, got empty input\n\n", i, s)
                 }
                 CondifyErrorKind::Nom(e) => {
                     write!(&mut result, "{}: in {:?}, got empty input\n\n", i, e)
+                }
+                CondifyErrorKind::NotDeclared(name) => {
+                    panic!(
+                        "I don't think you should be able to get here, please notify me if I do"
+                    );
+                    write!(&mut result, "{}: in {}, got empty input\n\n", i, name)
+                }
+                CondifyErrorKind::AlreadyAssigned(name) => {
+                    panic!(
+                        "I don't think you should be able to get here, please notify me if I do"
+                    );
                 }
             }
         } else {
@@ -195,6 +217,36 @@ pub fn convert_condify_error<I: core::ops::Deref<Target = str>>(
                             expected = tag,
                         )
                     }
+                }
+                CondifyErrorKind::NotDeclared(name) => {
+                    writeln!(
+                        &mut result,
+                        "{i}: at line {line_number}\n\
+                    {line}\n\
+                    {carets:>column$}\n\
+                    '{name}' is not declared\n\n",
+                        i = i,
+                        line_number = line_number,
+                        line = line,
+                        carets = "^".repeat(name.len()),
+                        column = column_number,
+                        name = name,
+                    )
+                }
+                CondifyErrorKind::AlreadyAssigned(name) => {
+                    writeln!(
+                        &mut result,
+                        "{i}: at line {line_number}\n\
+                    {line}\n\
+                    {carets:>column$}\n\
+                    {name} already assigned before\n\n",
+                        i = i,
+                        line_number = line_number,
+                        line = line,
+                        carets = "^".repeat(name.len()),
+                        column = column_number,
+                        name = name,
+                    )
                 }
                 CondifyErrorKind::Context(s) => write!(
                     &mut result,

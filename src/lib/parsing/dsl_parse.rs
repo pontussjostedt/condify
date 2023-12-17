@@ -3,6 +3,7 @@ use std::marker;
 use nom::branch::alt;
 use nom::bytes::complete::*;
 use nom::character::complete::{anychar, crlf, newline, space0};
+use nom::character;
 use nom::combinator::*;
 use nom::error::{context, VerboseError};
 use nom::multi::{many0, separated_list0};
@@ -43,17 +44,40 @@ pub enum TokenType<'a> {
         else_body: Option<Vec<TokenType<'a>>>,
     },
 }
-struct AssignmentState<'a> {
+#[derive(PartialEq, Debug)]
+struct DeclarationState<'a> {
     valid_names: Vec<&'a str>
 }
 
-impl AssignmentState<'_> {
+impl DeclarationState<'_> {
     fn is_valid_name(&self, name: &str) -> bool {
         self.valid_names.contains(&name)
     }
 }
 
-type ParseResult<'a, T: 'a> = IResult<&'a str, T, CondifyError<&'a str>>;
+#[derive(PartialEq, Debug)]
+struct AssignmentState<'a> {
+    declaration_state: &'a DeclarationState<'a>,
+    assigned: Vec<&'a str>,
+    default_declared: bool
+}
+impl AssignmentState<'_> {
+    fn with_default(&self) -> AssignmentState {
+        assert!(!self.default_declared, "Attempting to declare default twice");
+        AssignmentState {
+            default_declared: true,
+            declaration_state: self.declaration_state,
+            assigned: self.assigned.clone(),
+        }
+    }
+
+    fn is_valid_name(&self, name: &str) -> bool {
+        self.declaration_state.is_valid_name(&name)
+    }
+}
+
+
+type ParseResult<'a, O, I = &'a str> = IResult<I, O, CondifyError<&'a str>>;
 
 fn whitespace1<'a>(input: &'a str) -> ParseResult<'a, &str> {
     fn is_whitespace(c: char) -> bool {
@@ -67,6 +91,12 @@ fn name1<'a>(input: &'a str) -> ParseResult<'a, &str> {
         c.is_alphanumeric() || c == '_'
     }
     take_while1(is_valid_name_char)(input)
+}
+
+fn str_literal<'a>(input: &'a str) -> ParseResult<&'a str> {
+    //Todo allow escape char
+    let (rest, value) = delimited(character::complete::char('"'), take_while(|c| c != '"'), character::complete::char('"'))(input)?;
+    Ok((rest, value))
 }
 
 fn list1<'a> (start_delim: &'static str, end_delim: &'static str, sep: char) -> impl Fn(&'a str) -> ParseResult<Vec<&'a str>> {
@@ -83,11 +113,70 @@ fn parse_declaration<'a>(input: &'a str) -> ParseResult<TokenType> {
     Ok((rest, TokenType::Declaration(list)))
 }
 
+fn parse_default_arm<'a>(assignment_state: &'a AssignmentState<'a>, input: &'a str) -> ParseResult<'a, (AssignmentState<'a>, AssignmentArm<'a>)> {
+    let (rest, value) = preceded(tuple((tag(DEFAULT_NAME), opt(whitespace1), nom::character::complete::char('='), opt(whitespace1))), str_literal)(input)?;
+    if assignment_state.default_declared {
+        Err(nom::Err::Error(CondifyError::from_condify_error_kind(input, super::error::CondifyErrorKind::AlreadyAssigned("DEFAULT".to_owned()))))
+    } else {
+        Ok((rest, (assignment_state.with_default(), AssignmentArm::Default(value))))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::lib::parsing::error::CondifyErrorKind;
+    use crate::lib::parsing::error::{CondifyErrorKind, convert_condify_error};
 
     use super::*;
+
+    #[test]
+    fn test_parse_default_arm_error() {
+        let input = "DEFAULT = \"MyString\" rest";
+        let declaration_state = DeclarationState {
+            valid_names: vec![]
+        };
+        let assignment_state = AssignmentState {
+            declaration_state: &declaration_state,
+            assigned: vec![],
+            default_declared: true
+        };
+
+        let expected_error = CondifyError::from_condify_error_kind(input, CondifyErrorKind::AlreadyAssigned("DEFAULT".to_owned()));
+
+        match parse_default_arm(&assignment_state, input) {
+            Ok((rest, (new_state, result))) => {
+                assert!(false, "Should fail");
+            },
+            Err(err) => {
+                let condify_error: CondifyError<_> = match err {
+                    nom::Err::Error(e) | nom::Err::Failure(e) => e,
+                _ => CondifyError { errors: vec![] },
+                };
+                assert_eq!(condify_error, expected_error);
+                //let res = convert_condify_error(input, condify_error);
+                //println!("{}", res);
+            }
+        }
+    }
+
+    #[test]
+    fn test_parse_default_arm() {
+        let input = "DEFAULT = \"MyString\" rest";
+        let declaration_state = DeclarationState {valid_names: vec![]};
+        let assignment_state = AssignmentState {
+            declaration_state: &declaration_state,
+            assigned: vec![],
+            default_declared: false
+        };
+        let expected_output: ParseResult<(AssignmentState, AssignmentArm)> = Ok((" rest", (assignment_state.with_default(), AssignmentArm::Default("MyString"))));
+        assert_eq!(parse_default_arm(&assignment_state, input), expected_output);
+    }
+
+    #[test]
+    fn test_str_literal() {
+        let input = "\"MyString\" rest";
+        let expected_output: ParseResult<&str> = Ok((" rest", "MyString"));
+        assert_eq!(str_literal(input), expected_output);
+    }
 
     #[test]
     fn test_parse_declaration() {
