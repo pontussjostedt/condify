@@ -25,14 +25,15 @@ fn whitespace0(input: &str) -> ParseResult<&str> {
     take_while(|c: char| c.is_whitespace())(input)
 }
 
-/*
-fn list1<'a>(
-    start_delim: &'static str,
-    end_delim: &'static str,
-    sep: char,
-) -> impl Fn(Span<'a>) -> ParseResult<Vec<Span<'a>>> {
-    move |input: &'a Span<'a>| {
-        delimited(tag(start_delim), separated_list0(tuple((opt())), f), tag(end_delim))
+mod tests {
+    use crate::lib::dsl_parser::whitespace0;
+
+    use super::ParseResult;
+
+    #[test]
+    fn test_whitespace0() {
+        let input = " \n\r rest";
+        let expected_output: ParseResult<&str> = Ok(("rest", " \n\r "));
+        assert_eq!(whitespace0(input), expected_output);
     }
 }
-*/
