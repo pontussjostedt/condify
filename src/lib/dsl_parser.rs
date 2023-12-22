@@ -25,6 +25,10 @@ fn whitespace0(input: &str) -> ParseResult<&str> {
     take_while(|c: char| c.is_whitespace())(input)
 }
 
+fn name1(input: &str) -> ParseResult<&str> {
+    take_while(|c: char| c.is_alphanumeric())(input)
+}
+
 mod tests {
     use crate::lib::dsl_parser::whitespace0;
 
