@@ -1,2 +1,2 @@
+pub mod dsl_parser;
 mod markers;
-pub mod parser;
