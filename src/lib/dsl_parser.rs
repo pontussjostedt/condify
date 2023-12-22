@@ -26,13 +26,18 @@ fn whitespace0(input: &str) -> ParseResult<&str> {
 }
 
 fn name1(input: &str) -> ParseResult<&str> {
-    take_while(|c: char| c.is_alphanumeric())(input)
+    take_while(|c: char| c.is_alphanumeric() || c == '_')(input)
 }
 
 mod tests {
-    use crate::lib::dsl_parser::whitespace0;
+    use super::*;
 
-    use super::ParseResult;
+    #[test]
+    fn test_name1() {
+        let input = "c00l_NAME\" rest";
+        let expected_output: ParseResult<&str> = Ok(("\" rest", "c00l_NAME"));
+        assert_eq!(name1(input), expected_output)
+    }
 
     #[test]
     fn test_whitespace0() {
