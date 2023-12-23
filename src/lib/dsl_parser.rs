@@ -264,6 +264,69 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_if_nested() {
+        let input = format!(
+            "{IF_START}(a, b)Here is my string{IF_START}(a,c)Inner String{IF_END}{IF_END}",
+            IF_START = IF,
+            IF_END = IF_END
+        );
+
+        let expected_input_name1 = format!(
+            "a, b)Here is my string{IF_START}(a,c)Inner String{IF_END}{IF_END}",
+            IF_START = IF,
+            IF_END = IF_END
+        );
+
+        let expected_input_name2 = format!(
+            "b)Here is my string{IF_START}(a,c)Inner String{IF_END}{IF_END}",
+            IF_START = IF,
+            IF_END = IF_END
+        );
+
+        let expected_input_name3 = format!("a,c)Inner String{IF_END}{IF_END}", IF_END = IF_END);
+        let expected_input_name4 = format!("c)Inner String{IF_END}{IF_END}", IF_END = IF_END);
+        let expected_inpout_inner_if = format!(
+            "{IF_START}(a,c)Inner String{IF_END}{IF_END}",
+            IF_START = IF,
+            IF_END = IF_END
+        );
+
+        let expected_inner_if: Token = Token::If {
+            input: &expected_inpout_inner_if,
+            include: vec![
+                Name {
+                    input: &expected_input_name3,
+                    name: "a",
+                },
+                Name {
+                    input: &expected_input_name4,
+                    name: "c",
+                },
+            ],
+            if_block: vec![Token::FreeText("Inner String")],
+            else_block: None,
+        };
+        let expected_output: ParseResult<Token> = Ok((
+            "",
+            Token::If {
+                input: &input,
+                include: vec![
+                    Name {
+                        input: &expected_input_name1,
+                        name: "a",
+                    },
+                    Name {
+                        input: &expected_input_name2,
+                        name: "b",
+                    },
+                ],
+                if_block: vec![Token::FreeText("Here is my string"), expected_inner_if],
+                else_block: None,
+            },
+        ));
+    }
+
+    #[test]
     fn test_if_with_else() {
         use std::env;
         env::set_var("RUST_BACKTRACE", "1");
