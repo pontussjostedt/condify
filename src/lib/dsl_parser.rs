@@ -7,7 +7,7 @@ use nom::{
     bytes::complete::*,
     error::{Error, ParseError},
     multi::{many0, separated_list0},
-    sequence::delimited,
+    sequence::{delimited, preceded, terminated, tuple},
     IResult, InputLength, Parser,
 };
 type ParseResult<'a, O, I = &'a str> = IResult<I, O, Error<I>>;
@@ -47,8 +47,68 @@ fn name1(input: &str) -> ParseResult<Name> {
     })
 }
 
+fn str_litteral(input: &str) -> ParseResult<&str> {
+    delimited(
+        nom::character::complete::char('"'),
+        take_while(|c| c != '"'),
+        nom::character::complete::char('"'),
+    )(input)
+}
+
+fn assignment(input: &str) -> ParseResult<Token> {
+    let (rest, include) = separated_list0(
+        terminated(nom::character::complete::char(','), whitespace0),
+        name1,
+    )(input)?;
+    println!("rest after include: {:?}", rest);
+    let (rest, _) = tuple((
+        whitespace0,
+        nom::character::complete::char('='),
+        whitespace0,
+    ))(rest)?;
+    let (rest, str_litteral) = str_litteral(rest)?;
+    Ok((
+        rest,
+        Token::Assignment {
+            input: input,
+            include: include,
+            value: str_litteral,
+        },
+    ))
+}
+
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_assignment() {
+        let input = "ALL_THE_DETAIL, NO_DETAIL = \"MyString\" rest";
+        let expected_output: ParseResult<Token> = Ok((
+            " rest",
+            Token::Assignment {
+                input: input,
+                include: vec![
+                    Name {
+                        input: input,
+                        name: "ALL_THE_DETAIL",
+                    },
+                    Name {
+                        input: "NO_DETAIL = \"MyString\" rest",
+                        name: "NO_DETAIL",
+                    },
+                ],
+                value: "MyString",
+            },
+        ));
+        assert_eq!(assignment(input), expected_output);
+    }
+
+    #[test]
+    fn test_str_litteral() {
+        let input = "\"MyString \" rest";
+        let expected_output: ParseResult<&str> = Ok((" rest", "MyString "));
+        assert_eq!(str_litteral(input), expected_output);
+    }
 
     #[test]
     fn test_name1() {
