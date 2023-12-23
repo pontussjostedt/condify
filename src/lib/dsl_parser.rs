@@ -11,7 +11,7 @@ use nom::{
     error::{Error, ParseError},
     multi::{many0, separated_list0},
     sequence::{delimited, preceded, terminated, tuple},
-    IResult, InputLength, Parser,
+    IResult, InputLength, Parser, Offset,
 };
 type ParseResult<'a, O, I = &'a str> = IResult<I, O, Error<I>>;
 
@@ -191,8 +191,55 @@ where
     move |input: &'a str| {
         let mut out_vec: Vec<Token<'a>> = Vec::with_capacity(4);
         let mut outer_rest = input;
-        let x = many0(free_text_until(alt((to_break,))))(input);
-        todo!()
+        let mut first_str_index: Option<usize> = None;
+        let mut current_str_index: Option<usize> = None;
+        loop {
+            match to_break.parse(outer_rest) {
+                Ok(_) => {
+                    if let Some(actual_first_str_index) = first_str_index {
+                        out_vec.push(Token::FreeText(&input[actual_first_str_index..current_str_index.expect("You set these incorrectly...")]));
+                    }
+                    return Ok((outer_rest, out_vec))
+                },
+                Err(nom::Err::Error(_)) => (),
+                Err(nom::Err::Failure(e)) => return Err(nom::Err::Failure(e)),
+                Err(nom::Err::Incomplete(_)) => {
+                    panic!("You should not be able to get here; Incomplete is not supported!")
+                }
+            }
+            
+            match parse_once_no_free_text.parse(outer_rest) {
+                Ok((rest, result)) => {
+                    if let Some(actual_first_str_index) = first_str_index {
+                        out_vec.push(Token::FreeText(&input[actual_first_str_index..current_str_index.expect("You set these incorrectly...")]));
+                        first_str_index = None;
+                        current_str_index = None;
+                    }
+                    out_vec.push(result);
+                    outer_rest = rest;
+                    continue;
+                },
+                Err(nom::Err::Error(_)) => (),
+                Err(nom::Err::Failure(e)) => return Err(nom::Err::Failure(e)),
+                Err(nom::Err::Incomplete(_)) => {
+                    panic!("You should not be able to get here; Incomplete is not supported!")
+                }
+
+            }
+
+            if let Some(actual_first_str_index) = first_str_index {
+                if outer_rest.is_empty() {
+                    out_vec.push(Token::FreeText(&input[actual_first_str_index..]));
+                    return Ok(("", out_vec));
+                } else {
+                    out_vec.push(Token::FreeText(&input[actual_first_str_index..current_str_index.expect("You set these incorrectly...")]))
+                }
+            } else {
+                first_str_index = Some(input.offset(outer_rest));
+            }
+
+            
+        }
     }
 }
 mod tests {
