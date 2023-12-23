@@ -147,11 +147,60 @@ where
     }
 }
 
+fn free_text_until<'a, B, O>(
+    mut to_break: B,
+) -> impl FnMut(&'a str) -> ParseResult<(Token<'a>, Option<O>)>
+where
+    B: Parser<&'a str, O, nom::error::Error<&'a str>>,
+{
+    move |input: &'a str| {
+        let mut i: usize = 0;
+        while i < input.len() {
+            let sub_string = &input[i..];
+            match to_break.parse(sub_string) {
+                Ok((rest, result)) => {
+                    return Ok((rest, (Token::FreeText(&input[..i]), Some(result))))
+                }
+                Err(nom::Err::Error(_)) => (),
+                Err(nom::Err::Failure(e)) => return Err(nom::Err::Failure(e)),
+                Err(nom::Err::Incomplete(_)) => {
+                    panic!("You should not be able to get here; Incomplete is not supported!")
+                }
+            }
+
+            i += 1;
+        }
+        Ok(("", (Token::FreeText(input), None)))
+    }
+}
+
 fn parse_once_no_free_text(input: &str) -> ParseResult<Token> {
     alt((if_parse,))(input)
 }
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_free_text_until_accepts_all_if_empty() {
+        let input = "This is a cool text that you can accept";
+        let expected_output: ParseResult<(Token, Option<&str>)> =
+            Ok(("", (Token::FreeText(input), None)));
+        assert_eq!(free_text_until(tag("Never occurs"))(input), expected_output)
+    }
+
+    #[test]
+    fn test_free_text_until_breaks() {
+        let input = "This is a cool text that you can accept rest";
+        let expected_output: ParseResult<(Token, Option<&str>)> = Ok((
+            " rest",
+            (
+                Token::FreeText("This is a cool text that you can "),
+                Some(&"accept"),
+            ),
+        ));
+
+        assert_eq!(free_text_until(tag("accept"))(input), expected_output);
+    }
 
     #[test]
     fn test_that_many0_accepts_if_no_break_and_no_infinite_loop() {
