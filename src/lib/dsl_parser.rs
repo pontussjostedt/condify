@@ -117,7 +117,7 @@ fn if_parse(input: &str) -> ParseResult<Token> {
 fn many0_until<'a, P, B, O, O2>(
     mut parser: P,
     mut to_break: B,
-) -> impl FnOnce(&'a str) -> ParseResult<(Vec<O>, Option<O2>)>
+) -> impl FnMut(&'a str) -> ParseResult<(Vec<O>, Option<O2>)>
 where
     P: Parser<&'a str, O, Error<&'a str>>,
     B: Parser<&'a str, O2, Error<&'a str>>,
@@ -154,7 +154,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_that_many0_accepts_even_if_no_break_and_no_infinite_loop() {
+    fn test_that_many0_accepts_if_no_break_and_no_infinite_loop() {
         let input = "This is a cool text that you can accept";
         let expected_output: ParseResult<(Vec<char>, Option<&str>)> =
             Ok(("", (input.chars().collect(), None)));
