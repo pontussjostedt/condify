@@ -1,22 +1,32 @@
-use super::{error::*, markers::*};
+use super::{
+    error::*,
+    markers::{self, *},
+};
 
-use nom::{bytes::complete::*, error::Error, multi::separated_list0, sequence::delimited, IResult};
+use nom::{
+    bytes::complete::*,
+    error::{Error, ParseError},
+    multi::{many0, separated_list0},
+    sequence::delimited,
+    IResult, InputLength, Parser,
+};
 type ParseResult<'a, O, I = &'a str> = IResult<I, O, Error<I>>;
 
-struct AssignmentArm<'a> {
+#[derive(Debug, PartialEq)]
+struct Name<'a> {
     input: &'a str,
-    include: Vec<&'a str>,
-    value: &'a str,
+    name: &'a str,
 }
+#[derive(Debug, PartialEq)]
 enum Token<'a> {
     Declare {
         input: &'a str,
-        declared: Vec<&'a str>,
+        declared: Vec<Name<'a>>,
     },
     Assignment {
         input: &'a str,
-        name: &'a str,
-        arms: Vec<AssignmentArm<'a>>,
+        include: Vec<Name<'a>>,
+        value: &'a str,
     },
     FreeText(&'a str),
 }
@@ -25,8 +35,16 @@ fn whitespace0(input: &str) -> ParseResult<&str> {
     take_while(|c: char| c.is_whitespace())(input)
 }
 
-fn name1(input: &str) -> ParseResult<&str> {
-    take_while(|c: char| c.is_alphanumeric() || c == '_')(input)
+fn name1(input: &str) -> ParseResult<Name> {
+    take_while(|c: char| c.is_alphanumeric() || c == '_')(input).map(|(rest, result)| {
+        (
+            rest,
+            Name {
+                input,
+                name: result,
+            },
+        )
+    })
 }
 
 mod tests {
@@ -35,7 +53,13 @@ mod tests {
     #[test]
     fn test_name1() {
         let input = "c00l_NAME\" rest";
-        let expected_output: ParseResult<&str> = Ok(("\" rest", "c00l_NAME"));
+        let expected_output: ParseResult<Name> = Ok((
+            "\" rest",
+            Name {
+                input,
+                name: "c00l_NAME",
+            },
+        ));
         assert_eq!(name1(input), expected_output)
     }
 
