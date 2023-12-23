@@ -154,6 +154,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_that_many0_accepts_even_if_no_break_and_no_infinite_loop() {
+        let input = "This is a cool text that you can accept";
+        let expected_output: ParseResult<(Vec<char>, Option<&str>)> =
+            Ok(("", (input.chars().collect(), None)));
+        assert_eq!(
+            many0_until(nom::character::complete::anychar, tag("Never happends"))(input),
+            expected_output
+        );
+    }
+
+    #[test]
+    fn test_that_many0_breaks() {
+        let input = "This is a cool text that you can accept rest";
+        let expected_output: ParseResult<(Vec<char>, Option<&str>)> = Ok((
+            " rest",
+            (
+                "This is a cool text that you can ".chars().collect(),
+                Some(&"accept"),
+            ),
+        ));
+        assert_eq!(
+            many0_until(nom::character::complete::anychar, tag("accept"))(input),
+            expected_output
+        );
+    }
+
+    #[test]
     fn test_declaration() {
         //TODO: make test work even if marker symbols are changed
         let input = "<name1, name2> rest";
