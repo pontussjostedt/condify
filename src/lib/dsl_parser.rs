@@ -73,11 +73,7 @@ fn list0<'a>(
 }
 
 fn assignment(input: &str) -> ParseResult<Token> {
-    let (rest, include) = separated_list0(
-        terminated(nom::character::complete::char(','), whitespace0),
-        name1,
-    )(input)?;
-    println!("rest after include: {:?}", rest);
+    let (rest, include) = list0(ASSIGNMENT_DELIMITER_START, ASSIGNMENT_DELIMITER_END)(input)?;
     let (rest, _) = tuple((
         whitespace0,
         nom::character::complete::char('='),
@@ -87,8 +83,8 @@ fn assignment(input: &str) -> ParseResult<Token> {
     Ok((
         rest,
         Token::Assignment {
-            input: input,
-            include: include,
+            input,
+            include,
             value: str_litteral,
         },
     ))
@@ -96,6 +92,30 @@ fn assignment(input: &str) -> ParseResult<Token> {
 
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_list0_separated_whitespace() {
+        let input = "(a, b,\n c) rest";
+        let expected_output: ParseResult<Vec<Name>> = Ok((
+            " rest",
+            vec![
+                Name {
+                    input: &input[1..],
+                    name: "a",
+                },
+                Name {
+                    input: &input[4..],
+                    name: "b",
+                },
+                Name {
+                    input: &input[8..],
+                    name: "c",
+                },
+            ],
+        ));
+
+        assert_eq!(list0("(", ")")(input), expected_output);
+    }
 
     #[test]
     fn test_assignment() {
