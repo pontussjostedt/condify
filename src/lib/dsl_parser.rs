@@ -189,6 +189,9 @@ where
     B: Parser<&'a str, Token<'a>, nom::error::Error<&'a str>>
 {
     move |input: &'a str| {
+        if input.is_empty() {
+            return Ok((input, Vec::with_capacity(0)))
+        }
         let mut out_vec: Vec<Token<'a>> = Vec::with_capacity(4);
         let mut outer_rest = input;
         let mut first_str_index: Option<usize> = None;
