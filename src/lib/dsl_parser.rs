@@ -26,6 +26,7 @@ enum Token<'a> {
     },
     Assignment {
         input: &'a str,
+        name: Name<'a>,
         include: Vec<Name<'a>>,
         value: &'a str,
     },
@@ -91,17 +92,16 @@ fn declaration(input: &str) -> ParseResult<Token> {
 }
 
 fn assignment(input: &str) -> ParseResult<Token> {
-    let (rest, include) = list0(ASSIGNMENT_DELIMITER_START, ASSIGNMENT_DELIMITER_END)(input)?;
-    let (rest, _) = tuple((
-        whitespace0,
-        nom::character::complete::char('='),
-        whitespace0,
-    ))(rest)?;
-    let (rest, str_litteral) = str_litteral(rest)?;
+    let (rest, name) = name1(input)?;
+    let (rest, _) = tuple((whitespace0, tag("FOR"), whitespace0))(rest)?;
+    let (rest, include) = list0(ASSIGNMENT_DELIMITER_START, ASSIGNMENT_DELIMITER_END)(rest)?;
+    let (rest, _) = tuple((whitespace0, cut(tag("IS")), whitespace0))(rest)?;
+    let (rest, str_litteral) = cut(str_litteral)(rest)?;
     Ok((
         rest,
         Token::Assignment {
             input,
+            name,
             include,
             value: str_litteral,
         },
@@ -160,18 +160,22 @@ mod tests {
 
     #[test]
     fn test_assignment() {
-        let input = "ALL_THE_DETAIL, NO_DETAIL = \"MyString\" rest";
+        let input = "number FOR ALL_THE_DETAIL, NO_DETAIL IS \"MyString\" rest";
         let expected_output: ParseResult<Token> = Ok((
             " rest",
             Token::Assignment {
-                input: input,
+                input: "number FOR ALL_THE_DETAIL, NO_DETAIL IS \"MyString\" rest",
+                name: Name {
+                    input,
+                    name: "number",
+                },
                 include: vec![
                     Name {
-                        input: input,
+                        input: "ALL_THE_DETAIL, NO_DETAIL IS \"MyString\" rest",
                         name: "ALL_THE_DETAIL",
                     },
                     Name {
-                        input: "NO_DETAIL = \"MyString\" rest",
+                        input: "NO_DETAIL IS \"MyString\" rest",
                         name: "NO_DETAIL",
                     },
                 ],
