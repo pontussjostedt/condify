@@ -4,8 +4,9 @@ use super::{
 };
 
 use nom::{
+    branch::alt,
     bytes::complete::*,
-    combinator::cut,
+    combinator::{cut, not},
     error::{Error, ParseError},
     multi::{many0, separated_list0},
     sequence::{delimited, preceded, terminated, tuple},
@@ -108,11 +109,30 @@ fn assignment(input: &str) -> ParseResult<Token> {
     ))
 }
 
+fn if_parse(input: &str) -> ParseResult<Token> {
+    todo!()
+}
+
+fn parse_until<'a, P, B, O, O2>(
+    parser: P,
+    to_break: B,
+) -> impl FnOnce(&'a str) -> ParseResult<Vec<O>>
+where
+    P: Parser<&'a str, O, Error<&'a str>>,
+    B: Parser<&'a str, O2, Error<&'a str>>,
+{
+    move |input: &'a str| many0(preceded(not(to_break), parser))(input)
+}
+
+fn parse_once_no_free_text(input: &str) -> ParseResult<Token> {
+    alt((if_parse,))(input)
+}
 mod tests {
     use super::*;
 
     #[test]
     fn test_declaration() {
+        //TODO: make test work even if marker symbols are changed
         let input = "<name1, name2> rest";
         let expected_output: ParseResult<Token> = Ok((
             " rest",
@@ -136,6 +156,7 @@ mod tests {
 
     #[test]
     fn test_list0_separated_whitespace() {
+        //TODO: make test work even if marker symbols are changed
         let input = "(a, b,\n c) rest";
         let expected_output: ParseResult<Vec<Name>> = Ok((
             " rest",
