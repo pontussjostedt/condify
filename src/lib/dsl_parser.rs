@@ -106,6 +106,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_declaration() {
+        let input = "<name1, name2> rest";
+        let expected_output: ParseResult<Token> = Ok((
+            " rest",
+            Token::Declare {
+                input,
+                declared: vec![
+                    Name {
+                        input: "name1, name2> rest",
+                        name: "name1",
+                    },
+                    Name {
+                        input: "name2> rest",
+                        name: "name2",
+                    },
+                ],
+            },
+        ));
+
+        assert_eq!(declaration(input), expected_output);
+    }
+
+    #[test]
     fn test_list0_separated_whitespace() {
         let input = "(a, b,\n c) rest";
         let expected_output: ParseResult<Vec<Name>> = Ok((
