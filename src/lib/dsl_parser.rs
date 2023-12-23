@@ -1,3 +1,5 @@
+use std::ptr::addr_of_mut;
+
 use super::{
     error::*,
     markers::{self, *},
@@ -7,11 +9,11 @@ use nom::{
     branch::alt,
     bytes::complete::*,
     character::complete::space1,
-    combinator::{cut, not, peek},
+    combinator::{cut, not, opt, peek},
     error::{Error, ParseError},
     multi::{many0, separated_list0},
     sequence::{delimited, preceded, terminated, tuple},
-    IResult, InputLength, Parser, Offset,
+    IResult, InputLength, Offset, Parser,
 };
 type ParseResult<'a, O, I = &'a str> = IResult<I, O, Error<I>>;
 
@@ -111,9 +113,20 @@ fn assignment(input: &str) -> ParseResult<Token> {
 }
 
 fn if_parse(input: &str) -> ParseResult<Token> {
-    let (rest, _) = tuple((tag(IF_MARKER),))(input)?;
-    let (rest, names) = list0("", "")(rest)?;
-    let (rest, body) = many0(parse_once_no_free_text)
+    let (rest, _) = tuple((tag(IF),))(input)?;
+    let (rest, names) = list0("(", ")")(rest)?;
+    let (rest, body) = parse_until(alt((tag(IF_ELSE), tag(IF_END))))(rest)?;
+    let (rest, else_body) = opt(preceded(tag(IF_ELSE), parse_until(tag(IF_END))))(rest)?;
+    let (rest, _) = tag(IF_END)(rest)?;
+    Ok((
+        rest,
+        Token::If {
+            input,
+            include: names,
+            if_block: body,
+            else_block: else_body,
+        },
+    ))
 }
 
 ///Consumes until either 'parser fails' or 'to_break' succeeds, if it does the result is kept.
@@ -159,7 +172,10 @@ where
     move |input: &'a str| {
         let mut i: usize = 0;
         if input.len() == 0 {
-            return Err(nom::Err::Error(nom::error::Error::from_error_kind(input, nom::error::ErrorKind::LengthValue)));
+            return Err(nom::Err::Error(nom::error::Error::from_error_kind(
+                input,
+                nom::error::ErrorKind::LengthValue,
+            )));
         }
         while i < input.len() {
             let sub_string = &input[i..];
@@ -184,69 +200,139 @@ fn parse_once_no_free_text(input: &str) -> ParseResult<Token> {
     alt((if_parse,))(input)
 }
 
-fn parse_until<'a, B>(mut to_break: B) -> impl FnOnce(&'a str) -> ParseResult<'a, Vec<Token<'a>>> 
+fn parse_until<'a, B, O>(mut to_break: B) -> impl FnMut(&'a str) -> ParseResult<'a, Vec<Token<'a>>>
 where
-    B: Parser<&'a str, Token<'a>, nom::error::Error<&'a str>>
+    B: Parser<&'a str, O, nom::error::Error<&'a str>>,
 {
     move |input: &'a str| {
         if input.is_empty() {
-            return Ok((input, Vec::with_capacity(0)))
+            return Ok((input, Vec::with_capacity(0)));
         }
         let mut out_vec: Vec<Token<'a>> = Vec::with_capacity(4);
-        let mut outer_rest = input;
+        let mut substring = input;
         let mut first_str_index: Option<usize> = None;
         let mut current_str_index: Option<usize> = None;
         loop {
-            match to_break.parse(outer_rest) {
+            if substring.is_empty() {
+                let actual_current_str_index = current_str_index.expect("Should be set");
+                if let Some(actual_first_str_index) = first_str_index {
+                    if actual_first_str_index != actual_current_str_index {
+                        out_vec.push(Token::FreeText(&input[actual_first_str_index..]))
+                    }
+                }
+                return Ok(("", out_vec));
+            }
+            match to_break.parse(substring) {
                 Ok(_) => {
                     if let Some(actual_first_str_index) = first_str_index {
-                        out_vec.push(Token::FreeText(&input[actual_first_str_index..current_str_index.expect("You set these incorrectly...")]));
+                        let actual_current_str_index = current_str_index.expect("should be set");
+                        out_vec.push(Token::FreeText(
+                            &input[actual_first_str_index..actual_current_str_index - 1],
+                        ));
                     }
-                    return Ok((outer_rest, out_vec))
-                },
+                    return Ok((substring, out_vec));
+                }
                 Err(nom::Err::Error(_)) => (),
                 Err(nom::Err::Failure(e)) => return Err(nom::Err::Failure(e)),
-                Err(nom::Err::Incomplete(_)) => {
-                    panic!("You should not be able to get here; Incomplete is not supported!")
-                }
+                Err(nom::Err::Incomplete(_)) => panic!("Should not happen"),
             }
-            
-            match parse_once_no_free_text.parse(outer_rest) {
+
+            match parse_once_no_free_text(substring) {
                 Ok((rest, result)) => {
-                    if let Some(actual_first_str_index) = first_str_index {
-                        out_vec.push(Token::FreeText(&input[actual_first_str_index..current_str_index.expect("You set these incorrectly...")]));
-                        first_str_index = None;
-                        current_str_index = None;
-                    }
+                    substring = rest;
                     out_vec.push(result);
-                    outer_rest = rest;
                     continue;
-                },
+                }
                 Err(nom::Err::Error(_)) => (),
                 Err(nom::Err::Failure(e)) => return Err(nom::Err::Failure(e)),
-                Err(nom::Err::Incomplete(_)) => {
-                    panic!("You should not be able to get here; Incomplete is not supported!")
-                }
-
+                Err(nom::Err::Incomplete(_)) => panic!("Should not happen"),
             }
-
             if let Some(actual_first_str_index) = first_str_index {
-                if outer_rest.is_empty() {
-                    out_vec.push(Token::FreeText(&input[actual_first_str_index..]));
-                    return Ok(("", out_vec));
-                } else {
-                    out_vec.push(Token::FreeText(&input[actual_first_str_index..current_str_index.expect("You set these incorrectly...")]))
-                }
-            } else {
-                first_str_index = Some(input.offset(outer_rest));
-            }
+                let actual_current_str_index =
+                    current_str_index.expect("This should be set if first_str_index is set");
 
-            
+                current_str_index = Some(actual_current_str_index + 1);
+                substring = &input[actual_current_str_index..];
+            } else {
+                first_str_index = Some(input.offset(substring));
+                current_str_index = first_str_index;
+            }
         }
     }
 }
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_if_with_else() {
+        use std::env;
+        env::set_var("RUST_BACKTRACE", "1");
+        let input = format!(
+            "{IF_START}(a, b)Here is my string{IF_ELSE}Here is my else string{IF_END}",
+            IF_START = IF,
+            IF_ELSE = IF_ELSE,
+            IF_END = IF_END,
+        );
+        let expected_first_name_input = format!(
+            "a, b)Here is my string{IF_ELSE}Here is my else string{IF_END}",
+            IF_ELSE = IF_ELSE,
+            IF_END = IF_END,
+        );
+        let expected_second_name_input = format!(
+            "b)Here is my string{IF_ELSE}Here is my else string{IF_END}",
+            IF_ELSE = IF_ELSE,
+            IF_END = IF_END,
+        );
+        let expected_output: ParseResult<Token> = Ok((
+            "",
+            Token::If {
+                input: &input,
+                include: vec![
+                    Name {
+                        input: &expected_first_name_input,
+                        name: "a",
+                    },
+                    Name {
+                        input: &expected_second_name_input,
+                        name: "b",
+                    },
+                ],
+                if_block: vec![Token::FreeText("Here is my string")],
+                else_block: Some(vec![Token::FreeText("Here is my else string")]),
+            },
+        ));
+        assert_eq!(if_parse(&input), expected_output);
+    }
+
+    #[test]
+    fn test_if_no_else() {
+        let input = format!(
+            "{IF_START}(a, b)Here is my string{IF_END}",
+            IF_START = IF,
+            IF_END = IF_END
+        );
+        let expected_first_name_input = format!("a, b)Here is my string{IF_END}", IF_END = IF_END);
+        let expected_second_name_input = format!("b)Here is my string{IF_END}", IF_END = IF_END);
+        let expected_output: ParseResult<Token> = Ok((
+            "",
+            Token::If {
+                input: &input,
+                include: vec![
+                    Name {
+                        input: &expected_first_name_input,
+                        name: "a",
+                    },
+                    Name {
+                        input: &expected_second_name_input,
+                        name: "b",
+                    },
+                ],
+                if_block: vec![Token::FreeText("Here is my string")],
+                else_block: None,
+            },
+        ));
+        assert_eq!(if_parse(&input), expected_output);
+    }
 
     #[test]
     fn test_free_text_until_accepts_all_if_empty() {
