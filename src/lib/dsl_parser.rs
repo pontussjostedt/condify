@@ -5,6 +5,7 @@ use super::{
 
 use nom::{
     bytes::complete::*,
+    combinator::cut,
     error::{Error, ParseError},
     multi::{many0, separated_list0},
     sequence::{delimited, preceded, terminated, tuple},
@@ -53,6 +54,22 @@ fn str_litteral(input: &str) -> ParseResult<&str> {
         take_while(|c| c != '"'),
         nom::character::complete::char('"'),
     )(input)
+}
+
+fn list0<'a>(
+    delimiter_start: &'static str,
+    delimiter_end: &'static str,
+) -> impl Fn(&'a str) -> ParseResult<'a, Vec<Name<'a>>> {
+    move |input: &'a str| {
+        delimited(
+            tag(delimiter_start),
+            separated_list0(
+                terminated(nom::character::complete::char(','), whitespace0),
+                name1,
+            ),
+            cut(tag(delimiter_end)),
+        )(input)
+    }
 }
 
 fn assignment(input: &str) -> ParseResult<Token> {
