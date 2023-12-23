@@ -30,6 +30,12 @@ enum Token<'a> {
         value: &'a str,
     },
     FreeText(&'a str),
+    If {
+        input: &'a str,
+        include: Vec<Name<'a>>,
+        if_block: Vec<Token<'a>>,
+        else_block: Option<Vec<Token<'a>>>,
+    },
 }
 
 fn whitespace0(input: &str) -> ParseResult<&str> {
