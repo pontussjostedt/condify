@@ -72,6 +72,18 @@ fn list0<'a>(
     }
 }
 
+fn declaration(input: &str) -> ParseResult<Token> {
+    list0(DECLARATION_DELIMITER_START, DECLARATION_DELIMITER_END)(input).map(|(rest, names)| {
+        (
+            rest,
+            Token::Declare {
+                input: input,
+                declared: names,
+            },
+        )
+    })
+}
+
 fn assignment(input: &str) -> ParseResult<Token> {
     let (rest, include) = list0(ASSIGNMENT_DELIMITER_START, ASSIGNMENT_DELIMITER_END)(input)?;
     let (rest, _) = tuple((
