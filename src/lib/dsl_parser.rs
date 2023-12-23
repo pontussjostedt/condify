@@ -6,7 +6,8 @@ use super::{
 use nom::{
     branch::alt,
     bytes::complete::*,
-    combinator::{cut, not},
+    character::complete::space1,
+    combinator::{cut, not, peek},
     error::{Error, ParseError},
     multi::{many0, separated_list0},
     sequence::{delimited, preceded, terminated, tuple},
@@ -110,7 +111,9 @@ fn assignment(input: &str) -> ParseResult<Token> {
 }
 
 fn if_parse(input: &str) -> ParseResult<Token> {
-    todo!()
+    let (rest, _) = tuple((tag(IF_MARKER),))(input)?;
+    let (rest, names) = list0("", "")(rest)?;
+    let (rest, body) = many0(parse_once_no_free_text)
 }
 
 ///Consumes until either 'parser fails' or 'to_break' succeeds, if it does the result is kept.
@@ -155,6 +158,9 @@ where
 {
     move |input: &'a str| {
         let mut i: usize = 0;
+        if input.len() == 0 {
+            return Err(nom::Err::Error(nom::error::Error::from_error_kind(input, nom::error::ErrorKind::LengthValue)));
+        }
         while i < input.len() {
             let sub_string = &input[i..];
             match to_break.parse(sub_string) {
@@ -176,6 +182,18 @@ where
 
 fn parse_once_no_free_text(input: &str) -> ParseResult<Token> {
     alt((if_parse,))(input)
+}
+
+fn parse_until<'a, B>(mut to_break: B) -> impl FnOnce(&'a str) -> ParseResult<'a, Vec<Token<'a>>> 
+where
+    B: Parser<&'a str, Token<'a>, nom::error::Error<&'a str>>
+{
+    move |input: &'a str| {
+        let mut out_vec: Vec<Token<'a>> = Vec::with_capacity(4);
+        let mut outer_rest = input;
+        let x = many0(free_text_until(alt((to_break,))))(input);
+        todo!()
+    }
 }
 mod tests {
     use super::*;
