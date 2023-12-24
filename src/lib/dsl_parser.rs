@@ -8,7 +8,6 @@ use super::{
 use nom::{
     branch::alt,
     bytes::complete::*,
-    character::complete::space1,
     combinator::{cut, not, opt, peek},
     error::{Error, ParseError},
     multi::{many0, separated_list0},
@@ -18,33 +17,46 @@ use nom::{
 type ParseResult<'a, O, I = &'a str> = IResult<I, O, Error<I>>;
 
 #[derive(Debug, PartialEq)]
-struct Name<'a> {
-    input: &'a str,
-    name: &'a str,
+pub(super) struct Name<'a> {
+    pub input: &'a str,
+    pub name: &'a str,
 }
+
 #[derive(Debug, PartialEq)]
-enum Token<'a> {
-    Declare {
-        input: &'a str,
-        declared: Vec<Name<'a>>,
-    },
-    Assignment {
-        input: &'a str,
-        name: Name<'a>,
-        include: Vec<Name<'a>>,
-        value: &'a str,
-    },
+pub(super) struct Declaration<'a> {
+    input: &'a str,
+    declared: Vec<Name<'a>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub(super) struct Assignment<'a> {
+    input: &'a str,
+    name: Name<'a>,
+    include: Vec<Name<'a>>,
+    value: &'a str,
+}
+
+#[derive(Debug, PartialEq)]
+pub(super) struct If<'a> {
+    input: &'a str,
+    include: Vec<Name<'a>>,
+    if_block: Vec<Token<'a>>,
+    else_block: Option<Vec<Token<'a>>>,
+}
+
+#[derive(Debug, PartialEq)]
+pub(super) struct ReadValue<'a> {
+    input: &'a str,
+    name: Name<'a>,
+}
+
+#[derive(Debug, PartialEq)]
+pub(super) enum Token<'a> {
+    Declaration(Declaration<'a>),
+    Assignment(Assignment<'a>),
     FreeText(&'a str),
-    If {
-        input: &'a str,
-        include: Vec<Name<'a>>,
-        if_block: Vec<Token<'a>>,
-        else_block: Option<Vec<Token<'a>>>,
-    },
-    ReadValue {
-        input: &'a str,
-        name: Name<'a>,
-    },
+    If(If<'a>),
+    ReadValue(ReadValue<'a>),
 }
 
 fn whitespace0(input: &str) -> ParseResult<&str> {
@@ -91,10 +103,10 @@ fn declaration(input: &str) -> ParseResult<Token> {
     list0(DECLARATION_DELIMITER_START, DECLARATION_DELIMITER_END)(input).map(|(rest, names)| {
         (
             rest,
-            Token::Declare {
+            Token::Declaration(Declaration {
                 input: input,
                 declared: names,
-            },
+            }),
         )
     })
 }
@@ -107,12 +119,12 @@ fn assignment(input: &str) -> ParseResult<Token> {
     let (rest, str_litteral) = cut(str_litteral)(rest)?;
     Ok((
         rest,
-        Token::Assignment {
+        Token::Assignment(Assignment {
             input,
             name,
             include,
             value: str_litteral,
-        },
+        }),
     ))
 }
 
@@ -124,12 +136,12 @@ fn if_parse(input: &str) -> ParseResult<Token> {
     let (rest, _) = tag(IF_END)(rest)?;
     Ok((
         rest,
-        Token::If {
+        Token::If(If {
             input,
             include: names,
             if_block: body,
             else_block: else_body,
-        },
+        }),
     ))
 }
 
@@ -267,7 +279,7 @@ where
 
 fn read_value(input: &str) -> ParseResult<Token> {
     delimited(tag(READ_VALUE), name1, tag(READ_VALUE))(input)
-        .map(|(rest, name)| (rest, Token::ReadValue { input, name }))
+        .map(|(rest, name)| (rest, Token::ReadValue(ReadValue { input, name })))
 }
 
 mod tests {
@@ -279,13 +291,13 @@ mod tests {
         let expected_input = format! {"Name{marker} rest", marker = READ_VALUE};
         let expected_output: ParseResult<Token> = Ok((
             " rest",
-            Token::ReadValue {
+            Token::ReadValue(ReadValue {
                 input: &input,
                 name: Name {
                     input: &expected_input,
                     name: "Name",
                 },
-            },
+            }),
         ));
         assert_eq!(read_value(&input), expected_output);
     }
@@ -318,7 +330,7 @@ mod tests {
             IF_END = IF_END
         );
 
-        let expected_inner_if: Token = Token::If {
+        let expected_inner_if: Token = Token::If(If {
             input: &expected_inpout_inner_if,
             include: vec![
                 Name {
@@ -332,10 +344,10 @@ mod tests {
             ],
             if_block: vec![Token::FreeText("Inner String")],
             else_block: None,
-        };
+        });
         let expected_output: ParseResult<Token> = Ok((
             "",
-            Token::If {
+            Token::If(If {
                 input: &input,
                 include: vec![
                     Name {
@@ -349,7 +361,7 @@ mod tests {
                 ],
                 if_block: vec![Token::FreeText("Here is my string"), expected_inner_if],
                 else_block: None,
-            },
+            }),
         ));
     }
 
@@ -375,7 +387,7 @@ mod tests {
         );
         let expected_output: ParseResult<Token> = Ok((
             "",
-            Token::If {
+            Token::If(If {
                 input: &input,
                 include: vec![
                     Name {
@@ -389,7 +401,7 @@ mod tests {
                 ],
                 if_block: vec![Token::FreeText("Here is my string")],
                 else_block: Some(vec![Token::FreeText("Here is my else string")]),
-            },
+            }),
         ));
         assert_eq!(if_parse(&input), expected_output);
     }
@@ -405,7 +417,7 @@ mod tests {
         let expected_second_name_input = format!("b)Here is my string{IF_END}", IF_END = IF_END);
         let expected_output: ParseResult<Token> = Ok((
             "",
-            Token::If {
+            Token::If(If {
                 input: &input,
                 include: vec![
                     Name {
@@ -419,7 +431,7 @@ mod tests {
                 ],
                 if_block: vec![Token::FreeText("Here is my string")],
                 else_block: None,
-            },
+            }),
         ));
         assert_eq!(if_parse(&input), expected_output);
     }
@@ -479,7 +491,7 @@ mod tests {
         let input = "<name1, name2> rest";
         let expected_output: ParseResult<Token> = Ok((
             " rest",
-            Token::Declare {
+            Token::Declaration(Declaration {
                 input,
                 declared: vec![
                     Name {
@@ -491,7 +503,7 @@ mod tests {
                         name: "name2",
                     },
                 ],
-            },
+            }),
         ));
 
         assert_eq!(declaration(input), expected_output);
@@ -527,7 +539,7 @@ mod tests {
         let input = "number FOR ALL_THE_DETAIL, NO_DETAIL IS \"MyString\" rest";
         let expected_output: ParseResult<Token> = Ok((
             " rest",
-            Token::Assignment {
+            Token::Assignment(Assignment {
                 input: "number FOR ALL_THE_DETAIL, NO_DETAIL IS \"MyString\" rest",
                 name: Name {
                     input,
@@ -544,7 +556,7 @@ mod tests {
                     },
                 ],
                 value: "MyString",
-            },
+            }),
         ));
         assert_eq!(assignment(input), expected_output);
     }
