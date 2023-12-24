@@ -201,7 +201,7 @@ where
 }
 
 fn parse_once_no_free_text(input: &str) -> ParseResult<Token> {
-    alt((if_parse,))(input)
+    alt((if_parse, read_value))(input)
 }
 
 fn parse_until<'a, B, O>(mut to_break: B) -> impl FnMut(&'a str) -> ParseResult<'a, Vec<Token<'a>>>
