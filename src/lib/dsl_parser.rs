@@ -16,19 +16,19 @@ use nom::{
 };
 type ParseResult<'a, O, I = &'a str> = IResult<I, O, Error<I>>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(super) struct Name<'a> {
     pub input: &'a str,
     pub name: &'a str,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(super) struct Declaration<'a> {
-    input: &'a str,
-    declared: Vec<Name<'a>>,
+    pub input: &'a str,
+    pub declared: Vec<Name<'a>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(super) struct Assignment<'a> {
     input: &'a str,
     name: Name<'a>,
@@ -36,21 +36,21 @@ pub(super) struct Assignment<'a> {
     value: &'a str,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(super) struct If<'a> {
-    input: &'a str,
-    include: Vec<Name<'a>>,
-    if_block: Vec<Token<'a>>,
-    else_block: Option<Vec<Token<'a>>>,
+    pub input: &'a str,
+    pub include: Vec<Name<'a>>,
+    pub if_block: Vec<Token<'a>>,
+    pub else_block: Option<Vec<Token<'a>>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(super) struct ReadValue<'a> {
-    input: &'a str,
-    name: Name<'a>,
+    pub input: &'a str,
+    pub name: Name<'a>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(super) enum Token<'a> {
     Declaration(Declaration<'a>),
     Assignment(Assignment<'a>),
