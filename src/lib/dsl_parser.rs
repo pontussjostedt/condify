@@ -41,6 +41,10 @@ enum Token<'a> {
         if_block: Vec<Token<'a>>,
         else_block: Option<Vec<Token<'a>>>,
     },
+    ReadValue {
+        input: &'a str,
+        name: Name<'a>,
+    },
 }
 
 fn whitespace0(input: &str) -> ParseResult<&str> {
@@ -260,8 +264,31 @@ where
         }
     }
 }
+
+fn read_value(input: &str) -> ParseResult<Token> {
+    delimited(tag(READ_VALUE), name1, tag(READ_VALUE))(input)
+        .map(|(rest, name)| (rest, Token::ReadValue { input, name }))
+}
+
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_read_value() {
+        let input = format! {"{marker}Name{marker} rest", marker = READ_VALUE};
+        let expected_input = format! {"Name{marker} rest", marker = READ_VALUE};
+        let expected_output: ParseResult<Token> = Ok((
+            " rest",
+            Token::ReadValue {
+                input: &input,
+                name: Name {
+                    input: &expected_input,
+                    name: "Name",
+                },
+            },
+        ));
+        assert_eq!(read_value(&input), expected_output);
+    }
 
     #[test]
     fn test_if_nested() {
