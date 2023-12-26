@@ -279,8 +279,8 @@ where
         let mut current_str_index: Option<usize> = None;
         loop {
             if substring.is_empty() {
-                let actual_current_str_index = current_str_index.expect("Should be set");
                 if let Some(actual_first_str_index) = first_str_index {
+                    let actual_current_str_index = current_str_index.expect("Should be set");
                     if actual_first_str_index != actual_current_str_index {
                         out_vec.push(Token::FreeText(&input[actual_first_str_index..]))
                     }
@@ -304,15 +304,24 @@ where
 
             match parse_once_no_free_text(substring) {
                 Ok((rest, result)) => {
+                    if let Some(actual_first_str_index) = first_str_index {
+                        let actual_current_str_index =
+                            current_str_index.expect("should be set parce_once_no_free text");
+                        out_vec.push(Token::FreeText(
+                            &input[actual_first_str_index..actual_current_str_index - 1],
+                        ));
+                    }
                     substring = rest;
                     out_vec.push(result);
+                    first_str_index = None;
+                    current_str_index = None;
                     continue;
                 }
                 Err(nom::Err::Error(_)) => (),
                 Err(nom::Err::Failure(e)) => return Err(nom::Err::Failure(e)),
                 Err(nom::Err::Incomplete(_)) => panic!("Should not happen"),
             }
-            if let Some(actual_first_str_index) = first_str_index {
+            if let Some(_) = first_str_index {
                 let actual_current_str_index =
                     current_str_index.expect("This should be set if first_str_index is set");
 
@@ -359,6 +368,7 @@ pub fn parse(input: &str) -> ParseResult<Vec<Token>> {
 mod tests {
     use super::*;
 
+    #[derive(Debug, Clone, PartialEq)]
     enum SimpleToken<'a> {
         Declaration(Vec<&'a str>),
         Assignment {
@@ -404,19 +414,85 @@ mod tests {
                         .clone()
                         .map(|inner| inner.iter().map(SimpleToken::from).collect()),
                 },
-                Token::ReadValue(_) => todo!(),
+                Token::ReadValue(ReadValue { input: _, name }) => SimpleToken::ReadValue(name.name),
             }
         }
     }
 
     #[test]
     fn test_parse() {
+        use SimpleToken::*;
         let input = format!(
             "{DECLARATION_DELIMITER_START}DETAIL, NO_DETAIL{DECLARATION_DELIMITER_END}
 name1 FOR {ASSIGNMENT_DELIMITER_START}DETAIL, NO_DETAIL{ASSIGNMENT_DELIMITER_END} IS \"name1value\"
-name1 FOR {ASSIGNMENT_DELIMITER_START}DETAIL{ASSIGNMENT_DELIMITER_END} IS \"name2value\"
+name2 FOR {ASSIGNMENT_DELIMITER_START}DETAIL{ASSIGNMENT_DELIMITER_END} IS \"name2value\"
 here is some free text with a value {READ_VALUE}name1{READ_VALUE}
         "
+        );
+
+        let expected_output: ParseResult<Vec<SimpleToken>> = Ok((
+            "",
+            vec![
+                Declaration(vec!["DETAIL", "NO_DETAIL"]),
+                Assignment {
+                    name: "name1",
+                    include: vec!["DETAIL", "NO_DETAIL"],
+                    value: "name1value",
+                },
+                Assignment {
+                    name: "name2",
+                    include: vec!["DETAIL"],
+                    value: "name2value",
+                },
+                FreeText("\nhere is some free text with a value "),
+                ReadValue("name1"),
+                FreeText("\n        "),
+            ],
+        ));
+        assert_eq!(
+            parse(&input)
+                .map(|(rest, result)| (rest, result.iter().map(SimpleToken::from).collect_vec())),
+            expected_output
+        );
+    }
+
+    #[test]
+    fn test_parse_until_can_parse_two_consectuive_tokens() {
+        use SimpleToken::*;
+        let input = format!("here is a string{READ_VALUE}name1{READ_VALUE}{READ_VALUE}name2{READ_VALUE}{READ_VALUE}name3{READ_VALUE}");
+        let expect_output: ParseResult<Vec<SimpleToken>> = Ok((
+            "",
+            vec![
+                FreeText("here is a string"),
+                ReadValue("name1"),
+                ReadValue("name2"),
+                ReadValue("name3"),
+            ],
+        ));
+        assert_eq!(
+            parse_until(error_parser)(&input)
+                .map(|(rest, tokens)| (rest, tokens.iter().map(SimpleToken::from).collect())),
+            expect_output
+        );
+    }
+
+    #[test]
+    fn test_parse_until() {
+        use SimpleToken::*;
+        let input = "free text <*>name1<*> more text";
+        let expected_output: ParseResult<Vec<SimpleToken>> = Ok((
+            "",
+            vec![
+                FreeText("free text "),
+                ReadValue("name1"),
+                FreeText(" more text"),
+            ],
+        ));
+
+        assert_eq!(
+            parse_until(error_parser)(input)
+                .map(|(rest, result)| (rest, result.iter().map(SimpleToken::from).collect_vec())),
+            expected_output
         );
     }
 
