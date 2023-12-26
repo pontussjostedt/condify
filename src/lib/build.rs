@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::lib::dsl_parser::Name;
 
@@ -33,7 +33,7 @@ struct BuildContext<'a> {
     default: DefaultBranch<'a>,
     memory: HashMap<&'a str, Branch<'a>>,
     tokens: Vec<Token<'a>>,
-    token_index: usize,
+    write_default: bool,
 }
 
 impl<'a> BuildContext<'a> {
@@ -48,12 +48,14 @@ impl<'a> BuildContext<'a> {
     }
 }
 
-enum Errors<'a> {
+enum BuildError<'a> {
     NameAlreadyDeclared {
         first_declaration: Name<'a>,
         second_declaration: Name<'a>,
     },
 }
+
+type BuildResult<'a> = Result<BuildContext<'a>, BuildError<'a>>;
 
 fn build_vec(ctx: &mut BuildContext) {
     for token in ctx.tokens.iter_mut() {
@@ -66,13 +68,13 @@ mod tests {
 
     fn get_empty_buildcontext<'a>() -> BuildContext<'a> {
         BuildContext {
+            write_default: true,
             default: DefaultBranch {
                 string: "".to_string(),
                 values: HashMap::new(),
             },
             input: "",
             memory: HashMap::new(),
-            token_index: 0,
             tokens: vec![],
         }
     }
