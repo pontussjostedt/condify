@@ -5,11 +5,12 @@ use super::{
     markers::{self, *},
 };
 
+use itertools::Itertools;
 use nom::{
     branch::alt,
     bytes::complete::*,
-    combinator::{cut, not, opt, peek},
-    error::{Error, ParseError},
+    combinator::{cut, not, opt, peek, success},
+    error::{self, Error, ParseError},
     multi::{many0, separated_list0},
     sequence::{delimited, preceded, terminated, tuple},
     IResult, InputLength, Offset, Parser,
@@ -17,19 +18,19 @@ use nom::{
 type ParseResult<'a, O, I = &'a str> = IResult<I, O, Error<I>>;
 
 #[derive(Debug, PartialEq, Clone)]
-pub(super) struct Name<'a> {
+pub struct Name<'a> {
     pub input: &'a str,
     pub name: &'a str,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub(super) struct Declaration<'a> {
+pub struct Declaration<'a> {
     pub input: &'a str,
     pub declared: Vec<Name<'a>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub(super) struct Assignment<'a> {
+pub struct Assignment<'a> {
     input: &'a str,
     name: Name<'a>,
     include: Vec<Name<'a>>,
@@ -37,7 +38,7 @@ pub(super) struct Assignment<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub(super) struct If<'a> {
+pub struct If<'a> {
     pub input: &'a str,
     pub include: Vec<Name<'a>>,
     pub if_block: Vec<Token<'a>>,
@@ -45,18 +46,65 @@ pub(super) struct If<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub(super) struct ReadValue<'a> {
+pub struct ReadValue<'a> {
     pub input: &'a str,
     pub name: Name<'a>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub(super) enum Token<'a> {
+pub enum Token<'a> {
     Declaration(Declaration<'a>),
     Assignment(Assignment<'a>),
     FreeText(&'a str),
     If(If<'a>),
     ReadValue(ReadValue<'a>),
+}
+
+impl Token<'_> {
+    pub fn short_form(&self) -> String {
+        match self {
+            Token::Declaration(declaration) => format!(
+                "Declaration({})",
+                declaration
+                    .declared
+                    .iter()
+                    .map(|name| name.name)
+                    .intersperse(", ")
+                    .collect::<String>()
+            ),
+            Token::Assignment(assignment) => format!(
+                "Assignment(name: {}, for: {}, value: {})",
+                assignment.name.name,
+                assignment
+                    .include
+                    .iter()
+                    .map(|name| name.name)
+                    .intersperse(", ")
+                    .collect::<String>(),
+                assignment.value
+            ),
+            Token::FreeText(text) => text.to_string(),
+            Token::If(ifbody) => format!(
+                "If(include: {}, body: {}, else: {:?})",
+                ifbody
+                    .include
+                    .iter()
+                    .map(|name| name.name)
+                    .intersperse(", ")
+                    .collect::<String>(),
+                ifbody
+                    .if_block
+                    .iter()
+                    .map(|token| token.short_form())
+                    .collect::<String>(),
+                ifbody.else_block.clone().map(|tokens| tokens
+                    .iter()
+                    .map(|token| token.short_form() + "\n")
+                    .collect::<String>())
+            ),
+            Token::ReadValue(read_value) => format!("ReadValue(name: {})", read_value.name.name),
+        }
+    }
 }
 
 fn whitespace0(input: &str) -> ParseResult<&str> {
@@ -282,8 +330,36 @@ fn read_value(input: &str) -> ParseResult<Token> {
         .map(|(rest, name)| (rest, Token::ReadValue(ReadValue { input, name })))
 }
 
+fn error_parser(input: &str) -> ParseResult<()> {
+    return Err(nom::Err::Error(error::Error::from_error_kind(
+        input,
+        error::ErrorKind::Not,
+    )));
+}
+
+pub fn parse(input: &str) -> ParseResult<Vec<Token>> {
+    let (rest, declaration_opt) = opt(declaration)(input)?;
+    let (rest, assignments) = many0(preceded(whitespace0, assignment))(input)?;
+    let (rest, body) = parse_until(error_parser)(input)?; //TODO: make this an actual function without a weird bodge
+    let mut out = Vec::with_capacity(1 + assignments.len() + body.len());
+    //TODO: Fix so it concats in a better way.
+    if let Some(declaration) = declaration_opt {
+        out.push(declaration)
+    };
+    for token in assignments {
+        out.push(token);
+    }
+    for token in body {
+        out.push(token);
+    }
+    Ok((rest, out))
+}
+
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse() {}
 
     #[test]
     fn test_read_value() {
