@@ -6,8 +6,8 @@ use lib::dsl_parser::parse;
 mod lib;
 fn main() {
     let input = "<DETAIL>
-name1 FOR (DETAIL) IS \"VALUE\"
-name1 FOR (DETAIL) IS \"VALUE2\"
+name1 FOR DETAIL IS \"VALUE\"
+name1 FOR DETAIL IS \"VALUE2\"
 <*>name1<*>";
 
     let (_, result) = parse(input).unwrap();

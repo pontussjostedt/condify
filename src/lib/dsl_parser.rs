@@ -29,6 +29,7 @@ pub struct Declaration<'a> {
     pub declared: Vec<Name<'a>>,
 }
 
+/// Implementation used to protect the sanity of the person writing test
 #[derive(Debug, PartialEq, Clone)]
 pub struct Assignment<'a> {
     input: &'a str,
@@ -64,7 +65,7 @@ impl Token<'_> {
     pub fn short_form(&self) -> String {
         match self {
             Token::Declaration(declaration) => format!(
-                "Declaration({})",
+                "Declaration([{}])",
                 declaration
                     .declared
                     .iter()
@@ -73,7 +74,7 @@ impl Token<'_> {
                     .collect::<String>()
             ),
             Token::Assignment(assignment) => format!(
-                "Assignment(name: {}, for: {}, value: {})",
+                "Assignment(name: {}, for: [{}], value: {})",
                 assignment.name.name,
                 assignment
                     .include
@@ -85,7 +86,7 @@ impl Token<'_> {
             ),
             Token::FreeText(text) => format!("FreeText(\"{}\")", text),
             Token::If(ifbody) => format!(
-                "If(include: {}, body: {}, else: {:?})",
+                "If(include: [{}], body: {}, else: {:?})",
                 ifbody
                     .include
                     .iter()
@@ -339,8 +340,8 @@ fn error_parser(input: &str) -> ParseResult<()> {
 
 pub fn parse(input: &str) -> ParseResult<Vec<Token>> {
     let (rest, declaration_opt) = opt(declaration)(input)?;
-    let (rest, assignments) = many0(preceded(whitespace0, assignment))(input)?;
-    let (rest, body) = parse_until(error_parser)(input)?; //TODO: make this an actual function without a weird bodge
+    let (rest, assignments) = many0(preceded(whitespace0, assignment))(rest)?;
+    let (rest, body) = parse_until(error_parser)(rest)?; //TODO: make this an actual function without a weird bodge
     let mut out = Vec::with_capacity(1 + assignments.len() + body.len());
     //TODO: Fix so it concats in a better way.
     if let Some(declaration) = declaration_opt {
@@ -358,8 +359,66 @@ pub fn parse(input: &str) -> ParseResult<Vec<Token>> {
 mod tests {
     use super::*;
 
+    enum SimpleToken<'a> {
+        Declaration(Vec<&'a str>),
+        Assignment {
+            name: &'a str,
+            include: Vec<&'a str>,
+            value: &'a str,
+        },
+        FreeText(&'a str),
+        If {
+            include: Vec<&'a str>,
+            if_block: Vec<SimpleToken<'a>>,
+            else_block: Option<Vec<SimpleToken<'a>>>,
+        },
+        ReadValue(&'a str),
+    }
+
+    impl SimpleToken<'_> {
+        fn from<'a>(other: &Token<'a>) -> SimpleToken<'a> {
+            match other {
+                Token::Declaration(Declaration { input: _, declared }) => {
+                    SimpleToken::Declaration(declared.iter().map(|name| name.name).collect())
+                }
+                Token::Assignment(Assignment {
+                    input: _,
+                    name,
+                    include,
+                    value,
+                }) => SimpleToken::Assignment {
+                    name: name.name,
+                    include: include.iter().map(|name| name.name).collect(),
+                    value,
+                },
+                Token::FreeText(text) => SimpleToken::FreeText(text),
+                Token::If(If {
+                    input,
+                    include,
+                    if_block,
+                    else_block,
+                }) => SimpleToken::If {
+                    include: include.iter().map(|name| name.name).collect(),
+                    if_block: if_block.iter().map(SimpleToken::from).collect(),
+                    else_block: else_block
+                        .clone()
+                        .map(|inner| inner.iter().map(SimpleToken::from).collect()),
+                },
+                Token::ReadValue(_) => todo!(),
+            }
+        }
+    }
+
     #[test]
-    fn test_parse() {}
+    fn test_parse() {
+        let input = format!(
+            "{DECLARATION_DELIMITER_START}DETAIL, NO_DETAIL{DECLARATION_DELIMITER_END}
+name1 FOR {ASSIGNMENT_DELIMITER_START}DETAIL, NO_DETAIL{ASSIGNMENT_DELIMITER_END} IS \"name1value\"
+name1 FOR {ASSIGNMENT_DELIMITER_START}DETAIL{ASSIGNMENT_DELIMITER_END} IS \"name2value\"
+here is some free text with a value {READ_VALUE}name1{READ_VALUE}
+        "
+        );
+    }
 
     #[test]
     fn test_read_value() {

@@ -117,7 +117,6 @@ pub fn build<'a>(input: &'a str, tokens: Vec<Token<'a>>) -> BuildResult<'a> {
         write_default: true,
     };
     for token in tokens {
-        println!("{:?}", token);
         build_context.visit_any(&token)?;
     }
     Ok(())
