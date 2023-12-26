@@ -5,9 +5,9 @@ use imstr::*;
 use lib::dsl_parser::parse;
 mod lib;
 fn main() {
-    let input = "<DETAIL, DETAILED>
-name1 FOR DETAILED IS \"VALUE\"
-name2 FOR DETAILED IS \"VALUE2\"
+    let input = "<DETAIL>
+name1 FOR (DETAIL) IS \"VALUE\"
+name1 FOR (DETAIL) IS \"VALUE2\"
 <*>name1<*>";
 
     let (_, result) = parse(input).unwrap();
@@ -16,7 +16,7 @@ name2 FOR DETAILED IS \"VALUE2\"
         .map(|token| token.short_form() + "\n")
         .collect::<String>();
 
-    println!("{}", debug_string);
+    println!("SHORTFORM TRACE: \n*******\n {} \n******", debug_string);
 
     let x = build(input, result).unwrap();
 }

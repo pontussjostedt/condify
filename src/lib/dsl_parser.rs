@@ -83,7 +83,7 @@ impl Token<'_> {
                     .collect::<String>(),
                 assignment.value
             ),
-            Token::FreeText(text) => text.to_string(),
+            Token::FreeText(text) => format!("FreeText(\"{}\")", text),
             Token::If(ifbody) => format!(
                 "If(include: {}, body: {}, else: {:?})",
                 ifbody
