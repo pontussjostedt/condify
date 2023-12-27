@@ -1,123 +1,59 @@
-use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
-use crate::lib::dsl_parser::Name;
+use im::{HashMap, HashSet};
 
-use self::visit::Visitor;
+use super::dsl_parser::*;
 
-use super::dsl_parser::{Assignment, Declaration, If, ReadValue, Token};
-
-mod visit {
-    use crate::lib::dsl_parser::*;
-    pub trait Visitor<T> {
-        fn visit_name(&mut self, name: &Name) -> T;
-        fn visit_declaration(&mut self, declaration: &Declaration) -> T;
-        fn visit_if(&mut self, ifblock: &If) -> T;
-        fn visit_read_value(&mut self, read_value: &ReadValue) -> T;
-        fn visit_assignment(&mut self, assignment: &Assignment) -> T;
-        fn visit_free_text(&mut self, free_text: &str) -> T;
-    }
+struct Value<'a>(&'a str, Name<'a>);
+struct Branch<'a> {
+    name: Name<'a>,
+    memory: im::HashMap<&'a str, Value<'a>>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct DefaultBranch<'a> {
-    pub string: String,
-    pub values: HashMap<&'a str, &'a str>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Branch<'a> {
-    pub string: String,
-    pub values: HashMap<&'a str, &'a str>,
-    pub name: Name<'a>,
-}
-
-impl Branch<'_> {
-    fn from_default_branch<'a>(branch: &DefaultBranch<'a>, name: Name<'a>) -> Branch<'a> {
-        Branch {
-            string: branch.string.clone(),
-            values: HashMap::new(),
-            name: name,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct BuildContext<'a> {
-    input: &'a str,
-    default: DefaultBranch<'a>,
-    memory: HashMap<&'a str, Branch<'a>>,
+struct BuildState<'a> {
+    accumulator: Rc<HashMap<&'a str, Branch<'a>>>,
+    scope: im::HashSet<&'a str>,
     write_default: bool,
 }
 
-impl<'a> BuildContext<'a> {}
+type BuildResult<'a> = Result<BuildState<'a>, BuildError<'a>>;
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum BuildError<'a> {
-    NameAlreadyDeclared {
-        first_declaration: Name<'a>,
-        second_declaration: Name<'a>,
-    },
+enum BuildError<'a> {
+    DoubleDeclaration { name1: Name<'a>, name: Name<'a> },
 }
 
-type BuildResult<'a> = Result<(), BuildError<'a>>;
-
-impl<'a> Visitor<BuildResult<'a>> for BuildContext<'_> {
-    fn visit_name(&mut self, name: &Name) -> BuildResult<'a> {
-        println!("Visited name");
-        Ok(())
+impl BuildState<'_> {
+    fn fold_declaration(&self, token: &Declaration) -> BuildResult {
+        todo!()
     }
 
-    fn visit_declaration(&mut self, declaration: &Declaration) -> BuildResult<'a> {
-        println!("Visited declaration");
-        Ok(())
+    fn fold_assignment(&self, token: &Assignment) -> BuildResult {
+        todo!()
     }
 
-    fn visit_if(&mut self, ifblock: &If) -> BuildResult<'a> {
-        println!("Visited if");
-        for x in &ifblock.if_block {
-            self.visit_any(x);
-        }
-        Ok(())
+    fn fold_if(&self, token: &If) -> BuildResult {
+        todo!()
     }
 
-    fn visit_read_value(&mut self, read_value: &ReadValue) -> BuildResult<'a> {
-        println!("Visited read value");
-        Ok(())
+    fn fold_read_value(&self, token: &ReadValue) -> BuildResult {
+        todo!()
     }
 
-    fn visit_assignment(&mut self, assignment: &Assignment) -> BuildResult<'a> {
-        Ok(())
+    fn fold_free_text(&self, token: &str) -> BuildResult {
+        todo!()
     }
 
-    fn visit_free_text(&mut self, free_text: &str) -> BuildResult<'a> {
-        Ok(())
-    }
-}
-
-impl<'a> BuildContext<'_> {
-    fn visit_any(&mut self, token: &Token<'a>) -> BuildResult<'a> {
+    fn fold_any(&self, token: Token) -> BuildResult {
         match token {
-            Token::Declaration(declaration) => self.visit_declaration(&declaration),
-            Token::Assignment(assignment) => self.visit_assignment(&assignment),
-            Token::FreeText(free_text) => self.visit_free_text(free_text),
-            Token::If(ifblock) => self.visit_if(&ifblock),
-            Token::ReadValue(read_value) => self.visit_read_value(&read_value),
+            Token::Declaration(declaration) => self.fold_declaration(&declaration),
+            Token::Assignment(assingment) => self.fold_assignment(&assingment),
+            Token::FreeText(text) => self.fold_free_text(text),
+            Token::If(if_inner) => self.fold_if(&if_inner),
+            Token::ReadValue(read_value) => self.fold_read_value(&read_value),
         }
     }
 }
 
-pub fn build<'a>(input: &'a str, tokens: Vec<Token<'a>>) -> BuildResult<'a> {
-    let mut build_context = BuildContext {
-        default: DefaultBranch {
-            string: String::from(""),
-            values: HashMap::new(),
-        },
-        input: input,
-        memory: HashMap::new(),
-        write_default: true,
-    };
-    for token in tokens {
-        build_context.visit_any(&token)?;
-    }
-    Ok(())
+fn build(tokens: Vec<Token>) -> BuildResult {
+    todo!()
 }
