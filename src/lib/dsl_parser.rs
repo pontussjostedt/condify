@@ -17,28 +17,28 @@ use nom::{
 };
 type ParseResult<'a, O, I = &'a str> = IResult<I, O, Error<I>>;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Name<'a> {
     pub input: &'a str,
     pub name: &'a str,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Declaration<'a> {
     pub input: &'a str,
     pub declared: Vec<Name<'a>>,
 }
 
 /// Implementation used to protect the sanity of the person writing test
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct Assignment<'a> {
-    input: &'a str,
-    name: Name<'a>,
-    include: Vec<Name<'a>>,
-    value: &'a str,
+    pub input: &'a str,
+    pub name: Name<'a>,
+    pub include: Vec<Name<'a>>,
+    pub value: &'a str,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct If<'a> {
     pub input: &'a str,
     pub include: Vec<Name<'a>>,
@@ -46,13 +46,13 @@ pub struct If<'a> {
     pub else_block: Option<Vec<Token<'a>>>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub struct ReadValue<'a> {
     pub input: &'a str,
     pub name: Name<'a>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Hash, Eq)]
 pub enum Token<'a> {
     Declaration(Declaration<'a>),
     Assignment(Assignment<'a>),
