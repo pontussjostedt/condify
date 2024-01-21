@@ -1,28 +1,25 @@
-use std::{ops::Deref, rc::Rc};
+use std::{io, ops::Deref, rc::Rc};
 
+use clap::Parser;
 use lib::dsl_parser::parse;
 
 use crate::lib::build::build;
 
 mod lib;
-fn main() {
-    let input = "
-<DETAILED, NO_DETAIL>
-x FOR DEFAULT, DETAILED IS \"Bob\"
-x FOR NO_DETAIL IS \"Not bob\"
-here goes text <*>x<*>
-!IF(DETAILED)ONly for detailed!ENDIF
 
-    "
-    .trim();
+#[derive(Parser, Debug)]
+struct Cli {
+    input: std::path::PathBuf,
 
-    let (_, result) = parse(input).unwrap();
-    let bob = build(&result);
-    println!("{:?}", result);
+    #[arg(short, long)]
+    output: Option<std::path::PathBuf>,
 
-    println!("\n\n{:?}", bob);
+    #[arg(long)]
+    watch: bool,
+}
 
-    for (k, v) in bob.unwrap().get_accumulated_strings().iter() {
-        println!("Key: \"{}\" \n Value: {}", k, v)
-    }
+fn main() -> io::Result<()> {
+    let cli = Cli::parse();
+    //println!("{:?}", cli);
+    Ok(())
 }

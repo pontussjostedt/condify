@@ -426,7 +426,7 @@ mod tests {
 
         let result = build_state.visit_declaration(&declaration);
 
-        println!("{:?}", build_state);
+        //println!("{:?}", build_state);
 
         let detailed_branch = build_state
             .branches
