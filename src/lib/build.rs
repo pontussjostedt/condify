@@ -3,15 +3,17 @@ use std::collections::{HashMap, HashSet};
 use super::{dsl_parser::*, markers::DEFAULT};
 
 #[derive(Debug, PartialEq, Clone)]
+//AlreadyAssigned(&'a Assignment<'a>),
 pub enum BuildError<'a> {
-    AlreadyAssigned(&'a Assignment<'a>),
-    AlreadyDeclared(&'a Declaration<'a>),
-    NotDeclaredOnAssingment(&'a Assignment<'a>),
-    NotDeclaredOnReadValue(&'a ReadValue<'a>),
+    AlreadyDeclared(&'a Name<'a>),
+    NotDeclaredOnAssingment(&'a Name<'a>),
     NotAssignedOnReadValue(&'a ReadValue<'a>),
     NoDefaultValueOnReadValue(&'a ReadValue<'a>),
-    NotInScopeOnIf(&'a If<'a>),
-    DeclareDefault(&'a Declaration<'a>),
+    NotInScopeOnIf {
+        fail_name: &'a Name<'a>,
+        body: &'a If<'a>,
+    },
+    DeclareDefault(&'a Name<'a>),
 }
 
 pub trait Visitor<'a, T> {
@@ -65,9 +67,9 @@ impl<'a> Visitor<'a, Result<(), BuildError<'a>>> for BuildState<'a> {
         for name in declared {
             let name_str = name.name;
             if name_str == DEFAULT {
-                return Err(BuildError::DeclareDefault(decl));
+                return Err(BuildError::DeclareDefault(name));
             } else if self.branches.contains_key(name_str) {
-                return Err(BuildError::AlreadyDeclared(decl));
+                return Err(BuildError::AlreadyDeclared::<'a>(name));
             }
 
             self.branches
@@ -90,7 +92,7 @@ impl<'a> Visitor<'a, Result<(), BuildError<'a>>> for BuildState<'a> {
             value,
         }: &'a Assignment,
     ) -> Result<(), BuildError<'a>> {
-        for Name {
+        for full_name @ Name {
             input: _,
             name: branch_name,
         } in include
@@ -101,7 +103,7 @@ impl<'a> Visitor<'a, Result<(), BuildError<'a>>> for BuildState<'a> {
             } else if let Some(branch) = self.branches.get_mut(branch_name) {
                 branch.memory.0.insert(var_name, value);
             } else {
-                return Err(BuildError::NotDeclaredOnAssingment(assignment));
+                return Err(BuildError::NotDeclaredOnAssingment(full_name));
             }
         }
         Ok(())
@@ -119,14 +121,17 @@ impl<'a> Visitor<'a, Result<(), BuildError<'a>>> for BuildState<'a> {
     ) -> Result<(), BuildError<'a>> {
         let old_include = self.scope.clone();
         self.scope.clear();
-        for Name { input: _, name } in include {
+        for full_name @ Name { input: _, name } in include {
             if old_include.contains(name) {
                 let already_present = !self.scope.insert(name);
                 //if already_present {
                 //    return Err(BuildError::TwiceDeclaredOnIf(if_block_struct));
                 //}
             } else {
-                return Err(BuildError::NotInScopeOnIf(if_block_struct));
+                return Err(BuildError::NotInScopeOnIf {
+                    fail_name: full_name,
+                    body: if_block_struct,
+                });
             }
         }
 
