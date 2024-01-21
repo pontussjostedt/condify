@@ -1,339 +1,447 @@
-use std::{
-    ops::{Add, Deref, DerefMut},
-    rc::Rc,
-};
+use std::collections::{HashMap, HashSet};
 
-use im::hashmap;
-use im::{HashMap, HashSet};
-use imstr::data::Data;
+use super::{dsl_parser::*, markers::DEFAULT};
 
-use super::dsl_parser::*;
 #[derive(Debug, PartialEq, Clone)]
-struct Memory<'a>(im::HashMap<&'a str, &'a str>);
-impl<'a> Memory<'a> {
-    fn new() -> Self {
-        Memory(im::HashMap::new())
-    }
+pub enum BuildError<'a> {
+    AlreadyAssigned(&'a Assignment<'a>),
+    AlreadyDeclared(&'a Declaration<'a>),
+    NotDeclaredOnAssingment(&'a Assignment<'a>),
+    NotDeclaredOnReadValue(&'a ReadValue<'a>),
+    NotAssignedOnReadValue(&'a ReadValue<'a>),
+    NoDefaultValueOnReadValue(&'a ReadValue<'a>),
+    NotInScopeOnIf(&'a If<'a>),
+    DeclareDefault(&'a Declaration<'a>),
 }
+
+pub trait Visitor<'a, T> {
+    fn visit_declaration(&mut self, declaration: &'a Declaration) -> T;
+    fn visit_assignment(&mut self, assignment: &'a Assignment) -> T;
+    fn visit_if(&mut self, if_block: &'a If) -> T;
+    fn visit_read_value(&mut self, read_value: &'a ReadValue) -> T;
+    fn visit_free_text(&mut self, free_text: &'a str) -> T;
+    fn visit_any(&mut self, token: &'a Token<'a>) -> T;
+}
+
 #[derive(Debug, PartialEq, Clone)]
-struct Value<'a>(&'a str, Name<'a>);
+pub struct Memory<'a>(HashMap<&'a str, &'a str>);
+
 #[derive(Debug, PartialEq, Clone)]
-struct Branch<'a> {
+pub struct Branch<'a> {
     name: Name<'a>,
     memory: Memory<'a>,
-    string: Rc<String>,
+    string: String,
 }
 
 impl<'a> Branch<'a> {
-    fn assigned(&self, value_name: &'a str, value: &'a str) -> Result<Self, BuildError<'a>> {
-        Ok(Branch {
-            memory: Memory(self.memory.0.update(value_name, value)),
-            ..self.clone()
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct DefaultBranch<'a> {
-    memory: Memory<'a>,
-    string: Rc<String>,
-}
-
-impl<'a> DefaultBranch<'a> {
-    fn to_branch(&self, name: Name<'a>) -> Branch<'a> {
+    fn new(name: Name<'a>, default_branch: &DefaultBranch<'a>) -> Branch<'a> {
         Branch {
-            name: name,
-            memory: self.memory.clone(),
-            string: self.string.clone(),
-        }
-    }
-
-    fn assigned(&self, value_name: &Name<'a>, value: &'a str) -> Result<Self, BuildError<'a>> {
-        Ok(DefaultBranch {
-            memory: Memory(self.memory.0.update(value_name.name, value)),
-            ..self.clone()
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-struct BuildState<'a> {
-    branches: im::HashMap<&'a str, Branch<'a>>,
-    scope: im::HashSet<Name<'a>>,
-    write_default: bool,
-    default: DefaultBranch<'a>,
-}
-
-impl<'a> BuildState<'a> {
-    fn declared(&self, name: Name<'a>) -> BuildState<'a> {
-        BuildState {
-            branches: self
-                .branches
-                .update(name.name, self.default.to_branch(name)),
-            scope: self.scope.clone(),
-            write_default: self.write_default,
-            default: self.default.clone(),
-        }
-    }
-
-    fn assigned(
-        &self,
-        value_name: &Name<'a>,
-        to_include: &Name<'a>,
-        value: &'a str,
-    ) -> BuildResult<'a> {
-        let out = if to_include.name == "DEFAULT" && self.write_default {
-            let new_default = self.default.assigned(&value_name, value)?;
-            Ok(BuildState {
-                default: new_default,
-                ..self.clone()
-            })
-        } else if let Some(branch) = self.branches.get(to_include.name) {
-            let new_branch = branch.assigned(value_name.name, value)?;
-            Ok(BuildState {
-                branches: self.branches.update(to_include.name, new_branch),
-                ..self.clone()
-            })
-        } else {
-            Err(BuildError::NotDeclared(to_include.clone()))
-        }?;
-        Ok(out)
-    }
-
-    fn get_value(
-        &self,
-        branch_name: &Name<'a>,
-        name: &Name<'a>,
-    ) -> Result<&'a str, BuildError<'a>> {
-        if name.name == "DEFAULT" {
-            self.default
-                .memory
-                .0
-                .get(name.name)
-                .map_or(Err(BuildError::NotAssigned(name.clone())), |v| Ok(v))
-        } else {
-            self.branches.get(name.name).map_or(
-                Err(BuildError::NotDeclared(branch_name.clone())),
-                |branch| {
-                    branch
-                        .memory
-                        .0
-                        .get(name.name)
-                        .map_or(Err(BuildError::NotAssigned(name.clone())), |v| Ok(*v))
-                },
-            )
-        }
-    }
-
-    fn push_default_value(&self, name: &Name<'a>) -> Result<(), BuildError<'a>> {
-        assert!(self.write_default);
-        self.default.memory.0.get(name.name).map_or(
-            Err(BuildError::NotAssigned(name.clone())),
-            |v| {
-                Rc::make_mut(&mut self.default.string.clone()).push_str(v);
-
-                Ok(())
-            },
-        )
-    }
-
-    fn push_value(&self, branch_name: &Name<'a>, name: &Name<'a>) -> Result<(), BuildError<'a>> {
-        self.branches.get(name.name).map_or(
-            Err(BuildError::NotDeclared(branch_name.clone())),
-            |branch| {
-                branch.memory.0.get(name.name).map_or(
-                    Err(BuildError::NotAssigned(name.clone())),
-                    |v| {
-                        Rc::make_mut(&mut branch.string.clone()).push_str(v);
-                        Ok(())
-                    },
-                )
-            },
-        )
-    }
-}
-
-type BuildResult<'a> = Result<BuildState<'a>, BuildError<'a>>;
-
-#[derive(Debug, PartialEq, Clone)]
-enum BuildError<'a> {
-    DoubleDeclaration {
-        already_declared: Name<'a>,
-        attempted_declare: Name<'a>,
-    },
-    NotDeclared(Name<'a>),
-    NotAssigned(Name<'a>),
-    Unkown(),
-}
-
-impl<'a> BuildState<'a> {
-    fn fold_declaration(&self, token: &Declaration<'a>) -> BuildResult<'a> {
-        let mut out: BuildState<'a> = self.clone();
-        for name in token.declared.iter() {
-            out = out.declared(name.clone());
-        }
-        Ok(out)
-    }
-
-    fn fold_assignment(
-        &self,
-        Assignment {
-            input,
             name,
+            memory: default_branch.memory.clone(),
+            string: default_branch.string.clone(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct DefaultBranch<'a> {
+    memory: Memory<'a>,
+    string: String,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct BuildState<'a> {
+    branches: HashMap<&'a str, Branch<'a>>,
+    default: DefaultBranch<'a>,
+    scope: HashSet<&'a str>,
+    write_default: bool,
+}
+
+impl<'a> Visitor<'a, Result<(), BuildError<'a>>> for BuildState<'a> {
+    fn visit_declaration(
+        &mut self,
+        decl @ Declaration { input, declared }: &'a Declaration,
+    ) -> Result<(), BuildError<'a>> {
+        for name in declared {
+            let name_str = name.name;
+            if name_str == DEFAULT {
+                return Err(BuildError::DeclareDefault(decl));
+            } else if self.branches.contains_key(name_str) {
+                return Err(BuildError::AlreadyDeclared(decl));
+            }
+
+            self.branches
+                .insert(name.name, Branch::new(name.clone(), &self.default));
+
+            self.scope.insert(name.name);
+        }
+        Ok(())
+    }
+
+    fn visit_assignment(
+        &mut self,
+        assignment @ Assignment {
+            input: _,
+            name: Name {
+                input: _,
+                name: var_name,
+            },
             include,
             value,
-        }: &Assignment<'a>,
-    ) -> BuildResult<'a> {
-        let mut out: BuildState = self.clone();
-        for include_name in include {
-            out = self.assigned(name, include_name, value)?;
-        }
-        Ok(out)
-    }
-
-    fn fold_if(&self, if_block: &If<'a>) -> BuildResult<'a> {
-        let new_state = self.clone();
-        let mut if_state = BuildState {
-            scope: new_state
-                .scope
-                .intersection(if_block.include.iter().cloned().collect()),
-            ..new_state
-        };
-        for token in if_block.if_block.iter() {
-            if_state = if_state.fold_any(token)?;
-        }
-        if let Some(else_block) = &if_block.else_block {
-            let new_state = self.clone();
-            let mut else_state = BuildState {
-                scope: new_state
-                    .scope
-                    .difference(if_block.include.iter().cloned().collect()),
-                ..new_state
-            };
-            for token in else_block.iter() {
-                else_state = else_state.fold_any(token)?;
-            }
-        }
-        Ok(self.clone())
-    }
-
-    fn fold_read_value(&self, token: &ReadValue<'a>) -> BuildResult<'a> {
-        if self.write_default {
-            self.push_default_value(&token.name)?;
-        }
-        for branch_name in self.scope.iter() {
-            self.push_value(branch_name, &token.name)?;
-        }
-        Ok(self.clone())
-    }
-
-    fn fold_free_text(&self, token: &str) -> BuildResult<'a> {
-        if self.write_default {
-            Rc::make_mut(&mut self.default.string.clone()).push_str(token);
-        }
-
-        for branch_name in self.scope.iter() {
-            if let Some(branch) = self.branches.get(branch_name.name) {
-                Rc::make_mut(&mut branch.string.clone()).push_str(token);
+        }: &'a Assignment,
+    ) -> Result<(), BuildError<'a>> {
+        for Name {
+            input: _,
+            name: branch_name,
+        } in include
+        {
+            if branch_name == &DEFAULT {
+                assert!(self.write_default, "Fix later");
+                self.default.memory.0.insert(var_name, value);
+            } else if let Some(branch) = self.branches.get_mut(branch_name) {
+                branch.memory.0.insert(var_name, value);
             } else {
-                panic!("Should not happen");
+                return Err(BuildError::NotDeclaredOnAssingment(assignment));
+            }
+        }
+        Ok(())
+    }
+
+    //todo fix different traversal for non global scope
+    fn visit_if(
+        &mut self,
+        if_block_struct @ If {
+            input: _,
+            include,
+            if_block,
+            else_block,
+        }: &'a If,
+    ) -> Result<(), BuildError<'a>> {
+        let old_include = self.scope.clone();
+        self.scope.clear();
+        for Name { input: _, name } in include {
+            if old_include.contains(name) {
+                let already_present = !self.scope.insert(name);
+                //if already_present {
+                //    return Err(BuildError::TwiceDeclaredOnIf(if_block_struct));
+                //}
+            } else {
+                return Err(BuildError::NotInScopeOnIf(if_block_struct));
             }
         }
 
-        Ok(self.clone())
+        for token in if_block {
+            self.visit_any(token)?;
+        }
+        //let include_set: HashSet<&'a str> = HashSet::from_iter(include.iter().map(|n| n.name));
+        let else_set: HashSet<&'a str> = old_include.difference(&self.scope).cloned().collect();
+        if !else_set.is_empty() {
+            if let Some(else_block) = else_block {
+                self.scope = else_set;
+                for token in else_block {
+                    self.visit_any(token)?;
+                }
+            }
+        }
+        self.scope = old_include;
+        Ok(())
     }
 
-    fn fold_any(&self, token: &Token<'a>) -> BuildResult<'a> {
-        match token {
-            Token::Declaration(declaration) => self.fold_declaration(&declaration),
-            Token::Assignment(assingment) => self.fold_assignment(&assingment),
-            Token::FreeText(text) => self.fold_free_text(text),
-            Token::If(if_inner) => self.fold_if(&if_inner),
-            Token::ReadValue(read_value) => self.fold_read_value(&read_value),
+    fn visit_read_value(
+        &mut self,
+        read_value @ ReadValue {
+            input: _,
+            name: Name {
+                input: _,
+                name: var_name,
+            },
+        }: &'a ReadValue,
+    ) -> Result<(), BuildError<'a>> {
+        for branch_name in self.scope.iter() {
+            let branch = self
+                .branches
+                .get_mut(branch_name)
+                .expect("In scope but not declared");
+            //.ok_or(BuildError::NotDeclaredOnReadValue(read_value))?;
+
+            let value = branch
+                .memory
+                .0
+                .get(var_name)
+                .or(self.default.memory.0.get(var_name))
+                .ok_or(BuildError::NotAssignedOnReadValue(read_value))?;
+
+            branch.string.push_str(&value);
         }
+
+        if self.write_default {
+            let value = self
+                .default
+                .memory
+                .0
+                .get_mut(var_name)
+                .ok_or(BuildError::NoDefaultValueOnReadValue(read_value))?;
+
+            self.default.string.push_str(value);
+        }
+
+        Ok(())
+    }
+
+    fn visit_free_text(&mut self, free_text: &'a str) -> Result<(), BuildError<'a>> {
+        if self.write_default {
+            self.default.string.push_str(free_text);
+        }
+
+        for name in self.scope.iter() {
+            self.branches
+                .get_mut(name)
+                .expect("In scope but not declared")
+                .string
+                .push_str(free_text);
+        }
+
+        Ok(())
+    }
+
+    fn visit_any(&mut self, token: &'a Token<'a>) -> Result<(), BuildError<'a>> {
+        match token {
+            Token::Declaration(declaration) => self.visit_declaration(declaration)?,
+            Token::Assignment(assignment) => self.visit_assignment(assignment)?,
+            Token::FreeText(free_text) => self.visit_free_text(free_text)?,
+            Token::If(if_block) => self.visit_if(if_block)?,
+            Token::ReadValue(read_value) => self.visit_read_value(read_value)?,
+        }
+        Ok(())
     }
 }
 
-fn build<'a>(tokens: Vec<Token<'a>>) -> BuildResult<'a> {
-    let mut next_state = BuildState {
-        branches: im::HashMap::new(),
-        scope: im::HashSet::new(),
-        write_default: true,
-        default: DefaultBranch {
-            memory: Memory::new(),
-            string: Rc::new(String::from("")),
-        },
-    };
-
-    for token in tokens.iter() {
-        next_state = next_state.fold_any(&token)?;
+impl BuildState<'_> {
+    fn empty() -> Self {
+        let branches = HashMap::new();
+        BuildState {
+            branches,
+            default: DefaultBranch {
+                memory: Memory(HashMap::new()),
+                string: String::new(),
+            },
+            scope: HashSet::new(),
+            write_default: true,
+        }
     }
-    todo!()
+
+    pub fn get_accumulated_strings<'a>(&self) -> HashMap<&str, String> {
+        let mut out: HashMap<&str, String> = HashMap::with_capacity(self.branches.len() + 1);
+        out.insert(DEFAULT, self.default.string.clone());
+        self.branches.iter().for_each(|(k, v)| {
+            out.insert(k, v.string.clone());
+        });
+        out
+    }
+}
+
+pub fn build<'a>(tokens: &'a Vec<Token<'a>>) -> Result<BuildState<'a>, BuildError<'a>> {
+    let mut build_state = BuildState::empty();
+    for token in tokens.iter() {
+        build_state.visit_any(token)?;
+    }
+
+    Ok(build_state)
 }
 
 #[cfg(test)]
 mod tests {
-    use im::hashset;
-
     use super::*;
-
-    fn empty_state<'a>() -> BuildState<'a> {
-        BuildState {
-            branches: im::HashMap::new(),
-            scope: im::HashSet::new(),
-            write_default: true,
-            default: DefaultBranch {
-                memory: Memory::new(),
-                string: Rc::new(String::from("")),
-            },
-        }
+    const BRANCH_1_NAME: &'static str = "DETAILED";
+    const BRANCH_2_NAME: &'static str = "NO_DETAIL";
+    const VAR_1_NAME: &'static str = "x";
+    const VAR_1_VALUE: &'static str = "2";
+    fn build_state_with_non_empty_default<'a>() -> BuildState<'a> {
+        let mut build_state = BuildState::empty();
+        build_state.default.string.push_str("Here is some text");
+        build_state.default.memory.0.insert(VAR_1_NAME, VAR_1_VALUE);
+        build_state
     }
 
-    fn empty_branch<'a>(name: &'a str) -> Branch<'a> {
-        Branch {
-            name: simple_name(name),
-            memory: Memory::new(),
-            string: Rc::new(String::from("")),
-        }
+    fn build_state_with_branches<'a>() -> BuildState<'a> {
+        let mut build_state = BuildState::empty();
+        build_state.branches.insert(
+            BRANCH_1_NAME,
+            Branch::new(tname(BRANCH_1_NAME), &build_state.default),
+        );
+        build_state.branches.insert(
+            BRANCH_2_NAME,
+            Branch::new(tname(BRANCH_2_NAME), &build_state.default),
+        );
+        build_state.scope.insert(BRANCH_1_NAME);
+        build_state.scope.insert(BRANCH_2_NAME);
+        build_state
     }
 
-    fn simple_name(name: &str) -> Name {
+    fn build_state_with_branches_and_memory<'a>() -> BuildState<'a> {
+        let mut build_state = build_state_with_branches();
+        build_state.default.memory.0.insert(VAR_1_NAME, VAR_1_VALUE);
+        for name in vec![BRANCH_1_NAME, BRANCH_2_NAME] {
+            build_state
+                .branches
+                .get_mut(name)
+                .unwrap()
+                .memory
+                .0
+                .insert(VAR_1_NAME, VAR_1_VALUE);
+        }
+        build_state
+    }
+
+    fn tname<'a>(name: &'a str) -> Name<'a> {
         Name {
-            input: "Wont be used",
+            input: "TEST",
             name: name,
         }
     }
 
     #[test]
-    fn test_fold_declaration_ok() {
-        let name1 = "DETAILED";
-        let name2 = "NO_DETAIL";
-        let input = Declaration {
-            input: "Some string",
-            declared: vec![simple_name(name1), simple_name(name2)],
-        };
+    fn test_build_free_text_ok() {
+        let mut build_state = build_state_with_branches();
+        let free_text = "This is a text";
 
-        let expected_output: BuildResult = Ok(BuildState {
-            branches: hashmap! {name1 => empty_branch(name1), name2 => empty_branch(name2)},
-            ..empty_state()
-        });
+        let result = build_state.visit_free_text(free_text);
+        assert!(result.is_ok());
 
-        assert_eq!(empty_state().fold_declaration(&input), expected_output);
+        assert_eq!(build_state.default.string, free_text);
+
+        for name in build_state.scope.iter() {
+            assert_eq!(build_state.branches.get(name).unwrap().string, free_text);
+        }
     }
 
     #[test]
-    fn test_free_text() {
-        let input_name1 = "DETAIL";
-        let input_name2 = "NO_DETAIL";
-        let init_state = BuildState {
-            scope: hashset![simple_name(input_name1), simple_name(input_name2)],
-            branches: hashmap! {input_name1 => empty_branch(input_name1), input_name2 => empty_branch(input_name2)},
-            ..empty_state()
+    fn test_build_read_value_ok() {
+        let mut build_state = build_state_with_branches_and_memory();
+        let read_value = ReadValue {
+            input: "TEST",
+            name: tname(VAR_1_NAME),
         };
 
-        let input_string = "Thing";
-        let input = &Token::FreeText(input_string);
+        let result = build_state.visit_read_value(&read_value);
+        assert!(result.is_ok());
+        assert_eq!(build_state.default.string, VAR_1_VALUE);
+        for name in build_state.scope.iter() {
+            assert_eq!(build_state.branches.get(name).unwrap().string, VAR_1_VALUE);
+        }
+    }
 
-        println!("{:?}", init_state.fold_any(input));
+    #[test]
+    fn test_build_read_value_err_no_default() {
+        let mut build_state = build_state_with_branches_and_memory();
+        let read_value = ReadValue {
+            input: "TEST",
+            name: tname(VAR_1_NAME),
+        };
+        build_state.default.memory.0.clear();
+
+        let result = build_state.visit_read_value(&read_value);
+        assert_eq!(
+            result,
+            Err(BuildError::NoDefaultValueOnReadValue(&read_value))
+        );
+    }
+
+    #[test]
+    fn test_build_read_value_err_not_assinged() {
+        let mut build_state = build_state_with_branches();
+        let read_value = ReadValue {
+            input: "TEST",
+            name: tname("NOT_IN_MEMORY"),
+        };
+
+        let result = build_state.visit_read_value(&read_value);
+        assert_eq!(result, Err(BuildError::NotAssignedOnReadValue(&read_value)));
+    }
+
+    #[test]
+    fn test_build_assignment_default_ok() {
+        let mut build_state = build_state_with_branches();
+        let assignment = Assignment {
+            input: "TEST",
+            name: tname(VAR_1_NAME),
+            include: vec![tname(DEFAULT)],
+            value: VAR_1_VALUE,
+        };
+        let result = build_state.visit_assignment(&assignment);
+        assert!(result.is_ok());
+
+        let default_value = build_state
+            .default
+            .memory
+            .0
+            .get(VAR_1_NAME)
+            .expect("Memory not set for default");
+
+        assert_eq!(default_value, &VAR_1_VALUE);
+    }
+
+    #[test]
+    fn test_build_assingment_specific_ok() {
+        let mut build_state = build_state_with_branches();
+        let assignment = Assignment {
+            input: "TEST",
+            name: tname(VAR_1_NAME),
+            include: vec![tname(BRANCH_1_NAME)],
+            value: VAR_1_VALUE,
+        };
+
+        let result = build_state.visit_assignment(&assignment);
+        assert!(result.is_ok());
+
+        let memory = &build_state
+            .branches
+            .get(BRANCH_1_NAME)
+            .expect("Should exist not this tests fault")
+            .memory
+            .0;
+
+        assert_eq!(memory.get(VAR_1_NAME).expect("var not set"), &VAR_1_VALUE);
+        assert!(build_state
+            .branches
+            .get(BRANCH_2_NAME)
+            .expect("Should exist not this test fault")
+            .memory
+            .0
+            .get(VAR_1_NAME)
+            .is_none());
+    }
+
+    //Todo: check errors
+    #[test]
+    fn test_build_declaration_ok() {
+        let mut build_state = build_state_with_non_empty_default();
+        let declaration = Declaration {
+            input: "<DETAILED>",
+            declared: vec![Name {
+                input: "DETAILED>",
+                name: "DETAILED",
+            }],
+        };
+
+        let result = build_state.visit_declaration(&declaration);
+
+        println!("{:?}", build_state);
+
+        let detailed_branch = build_state
+            .branches
+            .get("DETAILED")
+            .expect("Failed to add branch");
+
+        let var = detailed_branch
+            .memory
+            .0
+            .get(VAR_1_NAME)
+            .expect("failed to set memory");
+
+        assert_eq!(var, &VAR_1_VALUE, "value not same");
+        assert_eq!(build_state.default.string, detailed_branch.string);
+        assert!(build_state.scope.contains("DETAILED"));
+        assert!(result.is_ok());
     }
 }
