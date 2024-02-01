@@ -1,0 +1,30 @@
+
+input: {
+    label: "input.txt"
+    shape: image
+    icon: ./image/input.svg
+    width: 450
+    height: 250
+}
+
+outputwrong: {
+    label: outputwrong.txt
+    shape: image
+    icon: ./outputwrong.svg
+    width: 300
+    height: 197
+}
+
+outputcorrect: {
+    label: outputcorrect.txt
+    shape: image
+    icon: ./outputcorrect.svg
+    width: 212
+    height: 197
+}
+
+input -> Condify
+
+Condify -> outputwrong
+Condify -> outputcorrect
+
