@@ -58,6 +58,19 @@ fn error_from_name<'a>(name: &Name<'a>, full_input: &'a str, prefix_message: &'a
     )
 }
 
+pub fn convert_syntax_error(error: nom::error::Error<&str>, full_input: &str) -> String {
+    let info = get_input_line(full_input, error.input);
+    format!(
+        "Syntax error, at line: {line_number}\n\
+        {line}\n\
+        {caret:>column$}\n",
+        line_number = info.line_number,
+        line = info.line,
+        caret = "^",
+        column = info.column_number
+    )
+}
+
 pub fn convert_build_error<'a>(build_error: BuildError<'a>, full_input: &'a str) -> String {
     match build_error {
         BuildError::AlreadyDeclared(failed_name) => {

@@ -347,7 +347,7 @@ fn error_parser(input: &str) -> ParseResult<()> {
     )));
 }
 
-pub fn parse(input: &str) -> ParseResult<Vec<Token>> {
+pub fn parse<'a>(input: &'a str) -> ParseResult<Vec<Token<'a>>> {
     let (rest, declaration_opt) = opt(declaration)(input)?;
     let (rest, assignments) = many0(preceded(whitespace0, assignment))(rest)?;
     let (rest, body) = parse_until(error_parser)(rest)?; //TODO: make this an actual function without a weird bodge

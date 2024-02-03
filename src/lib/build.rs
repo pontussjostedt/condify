@@ -235,11 +235,11 @@ impl BuildState<'_> {
         }
     }
 
-    pub fn get_accumulated_strings<'a>(&self) -> HashMap<&str, String> {
-        let mut out: HashMap<&str, String> = HashMap::with_capacity(self.branches.len() + 1);
-        out.insert(DEFAULT, self.default.string.clone());
+    pub fn get_accumulated_strings(&self) -> HashMap<String, String> {
+        let mut out: HashMap<String, String> = HashMap::with_capacity(self.branches.len() + 1);
+        out.insert(DEFAULT.to_string(), self.default.string.clone());
         self.branches.iter().for_each(|(k, v)| {
-            out.insert(k, v.string.clone());
+            out.insert(k.to_string(), v.string.clone());
         });
         out
     }
