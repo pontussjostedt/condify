@@ -1,13 +1,15 @@
 use clap::Parser;
+use core::time;
 use itertools::Itertools;
 use lib::dsl_parser::parse;
 use nom::error::convert_error;
 use std::{
     collections::HashMap,
     fs::{self, File},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, Write},
     path::PathBuf,
     process::Output,
+    time::SystemTime,
 };
 
 use crate::lib::{
@@ -86,6 +88,10 @@ fn do_try_write<'a>(input: &'a str, target: PathBuf) -> io::Result<()> {
     Ok(())
 }
 
+fn get_last_time(file: &File) -> io::Result<SystemTime> {
+    file.metadata()?.modified()
+}
+
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
     let mut file =
@@ -93,7 +99,19 @@ fn main() -> io::Result<()> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     do_try_write(&contents, cli.target_output())?;
-    while cli.watch {}
+    let mut last_update = get_last_time(&file)?;
+    while cli.watch {
+        let update_now = get_last_time(&file)?;
+
+        if update_now != last_update {
+            contents.clear();
+            file.rewind()?;
+            file.read_to_string(&mut contents)?;
+            do_try_write(&contents, cli.target_output())?;
+            last_update = update_now
+        }
+        std::thread::sleep(time::Duration::from_millis(250));
+    }
     Ok(())
 }
 

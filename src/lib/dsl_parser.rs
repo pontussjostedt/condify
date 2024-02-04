@@ -747,22 +747,22 @@ here is some free text with a value {READ_VALUE}name1{READ_VALUE}
 
     #[test]
     fn test_assignment() {
-        let input = "number FOR ALL_THE_DETAIL, NO_DETAIL IS \"MyString\" rest";
+        let input = "number FOR (ALL_THE_DETAIL, NO_DETAIL) IS \"MyString\" rest";
         let expected_output: ParseResult<Token> = Ok((
             " rest",
             Token::Assignment(Assignment {
-                input: "number FOR ALL_THE_DETAIL, NO_DETAIL IS \"MyString\" rest",
+                input: "number FOR (ALL_THE_DETAIL, NO_DETAIL) IS \"MyString\" rest",
                 name: Name {
                     input,
                     name: "number",
                 },
                 include: vec![
                     Name {
-                        input: "ALL_THE_DETAIL, NO_DETAIL IS \"MyString\" rest",
+                        input: "ALL_THE_DETAIL, NO_DETAIL) IS \"MyString\" rest",
                         name: "ALL_THE_DETAIL",
                     },
                     Name {
-                        input: "NO_DETAIL IS \"MyString\" rest",
+                        input: "NO_DETAIL) IS \"MyString\" rest",
                         name: "NO_DETAIL",
                     },
                 ],
