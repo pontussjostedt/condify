@@ -32,6 +32,7 @@ struct Cli {
 
 impl Cli {
     fn target_output(&self) -> PathBuf {
+        // Todo fix problem if output field is filled in an no %s present.
         self.output.clone().unwrap_or_else(|| {
             let input_path = self.input.to_str().expect("Input is not valid unicode");
             let mut out = String::new();
@@ -67,8 +68,11 @@ fn get_output_map<'a>(input: &'a str) -> Result<HashMap<String, String>, String>
 
 fn write_hashmap(to_write: HashMap<String, String>, target: std::path::PathBuf) -> io::Result<()> {
     for (key, value) in to_write {
-        //let path = target.join(key).join(suffix);
-        //fs::File::create(path)?.write(value.as_bytes())?;
+        let path_str = target
+            .to_str()
+            .expect("path not valid unicode")
+            .replace("%s", &key); //fs::File::create(path)?.write(value.as_bytes())?;
+        fs::File::create(PathBuf::from(path_str))?.write(value.as_bytes())?;
     }
     Ok(())
 }
@@ -88,7 +92,7 @@ fn main() -> io::Result<()> {
         File::open(&cli.input).expect(&format!("Could not read cli.input: {:?}", cli.input));
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    println!("{:?}", "Hello".split(".").collect_vec());
+    do_try_write(&contents, cli.target_output())?;
     while cli.watch {}
     Ok(())
 }
