@@ -1,0 +1,4 @@
+<TWO, ONE>
+x FOR (DEFAULT, TWO) IS "2"
+x FOR (ONE) IS "1"
+The magic number is <*>x<*>
