@@ -6,6 +6,7 @@ Condify is a command line utility that lets you add extra syntax to any file and
 ### Error messages
 
 Most faulty input will have a helpful error message. Bellow is an example where the user tries to assign before declaring:
+
 input:
 
 ```
